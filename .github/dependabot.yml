@@ -1,0 +1,45 @@
+# Aggiornamenti settimanali di azioni GitHub e pacchetti NuGet. Le azioni sono pinnate per SHA completo con il tag nel
+# commento: Dependabot aggiorna lo SHA e il commento insieme.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Rome
+    commit-message:
+      prefix: ci
+    # Minor e patch in un'unica pull request; un major resta una pull request a se' (da leggere prima di accettare).
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Con `directory: /` Dependabot parte da Filemaster.slnx, ne espande i progetti e trova Directory.Packages.props
+  # (gestione centralizzata delle versioni).
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Rome
+    commit-message:
+      prefix: deps
+    groups:
+      test-tooling:
+        patterns: ["xunit*", "Microsoft.Testing.*", "Microsoft.Extensions.TimeProvider.Testing"]
+        update-types: [minor, patch]
+    # Floor delle dipendenze di runtime: 8.0.x DI PROPOSITO. Un floor piu' alto darebbe NU1605 (downgrade) a chi
+    # nella propria applicazione fissa una versione inferiore. Alzarli e' una decisione (modifica manuale di
+    # Directory.Packages.props), non un aggiornamento automatico. Nomi esatti e non glob: `Microsoft.Extensions.*`
+    # prenderebbe anche Microsoft.Extensions.TimeProvider.Testing 10.x, che e' solo di test e NON e' un floor.
+    # Un pacchetto di runtime nuovo con floor 8.0.x va aggiunto qui. Gli avvisi di sicurezza arrivano comunque dal job
+    # `vulnerabilita` di ci.yml.
+    ignore:
+      - dependency-name: System.Text.Json
+      - dependency-name: Microsoft.Bcl.AsyncInterfaces
+      - dependency-name: Microsoft.Bcl.TimeProvider
+      - dependency-name: Microsoft.Extensions.Logging.Abstractions
+      - dependency-name: Microsoft.Extensions.Http

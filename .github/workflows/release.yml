@@ -1,0 +1,285 @@
+name: Release
+
+# Si attiva solo su un tag `v*` spinto a mano: pubblicare una versione resta una decisione di una persona.
+# Una pubblicazione su nuget.org e' irreversibile (le versioni sono immutabili, si puo' solo de-listare).
+on:
+  push:
+    tags: ["v*"]
+
+# Permessi minimi a livello radice: i job che ne vogliono di piu' li dichiarano loro (un blocco `permissions` di
+# job sostituisce quello radice, non si somma).
+permissions:
+  contents: read
+
+# Nessun blocco `concurrency`, di proposito: anche con cancel-in-progress a false GitHub tiene una sola corsa in attesa
+# per gruppo e cancella le altre, e una release in attesa cancellata in silenzio e' peggio di due release in parallelo
+# (ogni tag e' una corsa diversa, con i suoi artefatti).
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+# `shell: bash` esplicito equivale a `bash --noprofile --norc -eo pipefail`, anche su Windows (Git Bash).
+defaults:
+  run:
+    shell: bash
+
+# Il nome del tag arriva sempre dalla variabile d'ambiente del runner ($GITHUB_REF_NAME), mai interpolato con
+# `${{ }}` dentro uno script: un nome di tag e' un input controllato da chi spinge.
+jobs:
+  # I controlli si rifanno qui: un tag puo' essere spinto su un commit che la CI non ha mai visto.
+  verifica:
+    name: Verifica (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # fetch-depth 0: il default e' shallow (un solo commit, nessun origin/main) e il controllo di discendenza
+      # fallirebbe al primo giro.
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # LC_ALL=C: gli intervalli della regex sono ASCII, indipendenti dalla lingua del runner.
+      - name: Controllo del nome del tag
+        env:
+          LC_ALL: C
+        run: |
+          tag_re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if [[ ! "$GITHUB_REF_NAME" =~ $tag_re ]]; then
+            echo "::error::Il tag '$GITHUB_REF_NAME' non ha la forma vX.Y.Z o vX.Y.Z-prerelease"
+            exit 1
+          fi
+
+      # Si rilascia solo da main: il commit del tag deve essere raggiungibile da origin/main (cioe' gia' li' dentro).
+      - name: Il commit del tag e' su main
+        run: |
+          if ! git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null; then
+            echo "::error::origin/main non trovato dopo il checkout"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Il commit $(git rev-parse HEAD) del tag non e' raggiungibile da origin/main: si rilascia solo da main"
+            exit 1
+          fi
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      # `dotnet format` processa ogni file solo sotto il primo TFM: servono due passaggi.
+      - name: Formattazione (TFM di default)
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Formattazione (net10.0)
+        env:
+          TargetFrameworks: net10.0
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Test (net8.0, net10.0)
+        run: |
+          for tfm in net8.0 net10.0; do
+            for p in UnitTests IntegrationTests; do
+              dotnet test --project "tests/Filemaster.$p" -c Release -f "$tfm" --no-build
+            done
+          done
+
+  # Come il job windows di ci.yml: net48 e' l'unico modo di provare davvero l'asset netstandard2.0.
+  verifica-windows:
+    name: Verifica (Windows, net48)
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      # Il test di memoria (trait Category=Memory) ha un passo suo: qui si esclude per non ripeterlo su ogni TFM.
+      - name: Test (net8.0, net10.0, net48)
+        run: |
+          for tfm in net8.0 net10.0 net48; do
+            for p in UnitTests IntegrationTests; do
+              dotnet test --project "tests/Filemaster.$p" -c Release -f "$tfm" --no-build --filter-not-trait "Category=Memory"
+            done
+          done
+
+      # TODO(T6.1): il test non esiste ancora (vedi il commento dello stesso passo in ci.yml). Quando c'e', togliere
+      # --ignore-exit-code 8 e aggiungere --minimum-expected-tests 1.
+      - name: Test di memoria (upload da 200 MB, net48)
+        run: >-
+          dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net48 --no-build
+          --filter-trait "Category=Memory" --ignore-exit-code 8
+
+  pack:
+    name: Pack
+    needs: [verifica, verifica-windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # Il remote origin serve a SourceLink (il commit finisce nel nuspec); non serve la storia.
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      # Versione dal tag (v1.2.3 -> 1.2.3). GitHub Actions imposta CI=true: build deterministica e SourceLink completo.
+      # Niente --no-build: la versione entra nell'AssemblyVersion, quindi il pack ricompila con la versione del tag.
+      - name: Pack
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          dotnet pack -c Release --no-restore -p:Version="$version" -o artifacts
+
+      # 3 cartelle lib/, range esatti tra i pacchetti fratelli, licenza, readme, snupkg. --require-commit: si costruisce da
+      # un checkout vero (origin github.com), quindi SourceLink deve aver scritto il commit nel nuspec.
+      - name: Verifica dei pacchetti
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          bash eng/verify-packages.sh --require-commit artifacts "$version"
+
+      # Chi scarica un pacchetto dalla release lo puo' confrontare con qualcosa: formato `sha256sum -c`.
+      - name: Checksum
+        run: |
+          cd artifacts
+          sha256sum -- *.nupkg *.snupkg > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Carica i pacchetti
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pacchetti
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+            artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  github-release:
+    name: Release su GitHub
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Scarica i pacchetti
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pacchetti
+          path: artifacts
+
+      # Il tag e' quello della corsa; `prerelease` se contiene un trattino (vX.Y.Z-rc.1). Rilanciabile: se la release
+      # esiste gia', la aggiorna.
+      - name: Pubblica la release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+            artifacts/SHA256SUMS.txt
+
+  # Il file di workflow resta release.yml e il job gira nell'environment `nuget`: sono i due dati che la policy di
+  # Trusted Publishing su nuget.org (owner, repository, workflow, environment) confronta con il token OIDC. Nessuna
+  # chiave a lunga durata nei segreti, solo NUGET_USER (il nome del profilo, non l'email).
+  publish-nuget:
+    name: Pubblica su nuget.org
+    needs: github-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Scarica i pacchetti
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pacchetti
+          path: artifacts
+
+      # La pubblicazione e' irreversibile: si ricontrolla che i file siano quelli impacchettati dal job `pack`.
+      - name: Integrita' degli artefatti
+        run: |
+          cd artifacts
+          sha256sum -c SHA256SUMS.txt
+
+      # Scambia il token OIDC con una chiave API temporanea (1 ora), esposta come output NUGET_API_KEY. L'azione la
+      # maschera nel log (setSecret); qui non la si stampa e la si passa al passo di push solo via `env:`, non
+      # interpolata nello script (il README dell'azione la interpola inline: scelta voluta).
+      - name: Login a nuget.org (OIDC)
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      # Foglie prima (Domain, Application, Infrastructure, poi Filemaster), tutti i .nupkg prima degli .snupkg.
+      # Elenco esplicito e non glob: `Filemaster.0.1.0.nupkg` ordinerebbe prima di `Filemaster.Application...`.
+      # --no-symbols sui .nupkg: senza, NuGet spinge da solo l'.snupkg gemello subito dopo ogni .nupkg e l'ordine
+      # voluto salta. Gli .snupkg si spingono a parte, esplicitamente, sull'indice v3 (che espone l'endpoint dei simboli;
+      # su una sorgente senza simboli NuGet salterebbe l'.snupkg in silenzio, con exit 0). Mai mettere --no-symbols nel
+      # ciclo degli .snupkg: con --no-symbols NuGet non risolve l'endpoint dei simboli e salta l'.snupkg senza errore.
+      # --skip-duplicate rende il job rilanciabile: se fallisce a meta', il rilancio salta cio' che c'e' gia'.
+      - name: Push su nuget.org
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          source="https://api.nuget.org/v3/index.json"
+          ids=(Filemaster.Domain Filemaster.Application Filemaster.Infrastructure Filemaster)
+          for id in "${ids[@]}"; do
+            dotnet nuget push "artifacts/$id.$version.nupkg" --no-symbols --skip-duplicate \
+              --source "$source" --api-key "$NUGET_API_KEY"
+          done
+          for id in "${ids[@]}"; do
+            dotnet nuget push "artifacts/$id.$version.snupkg" --skip-duplicate \
+              --source "$source" --api-key "$NUGET_API_KEY"
+          done

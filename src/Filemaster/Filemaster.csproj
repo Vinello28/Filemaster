@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Filemaster</AssemblyName>
+    <RootNamespace>Filemaster</RootNamespace>
+    <PackageId>Filemaster</PackageId>
+    <Description>Filemaster: client .NET per l'API HTTP di Sharp-a-File (registrazione DI e factory); porta con se' Domain, Application e Infrastructure.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="PolySharp" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Filemaster.Domain\Filemaster.Domain.csproj" />
+    <ProjectReference Include="..\Filemaster.Application\Filemaster.Application.csproj" />
+    <ProjectReference Include="..\Filemaster.Infrastructure\Filemaster.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,20 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- Come in src/: un TargetFrameworks passato da ambiente o riga di comando (2o passaggio di dotnet format) ha la precedenza;
+       senza la Condition i test restavano su net8.0 mentre src/ aveva solo net10.0 e dotnet format non li caricava. -->
+  <PropertyGroup Condition="'$(TargetFrameworks)' == ''">
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <!-- net48 solo su Windows; su Mac/Linux si puo' solo compilare (non eseguire) con -p:IncludeNet48=true. -->
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows')) Or '$(IncludeNet48)' == 'true'">$(TargetFrameworks);net48</TargetFrameworks>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- net8.0 esce dal supporto il 10/11/2026: l'SDK emettera' NETSDK1138, ma SOLO per i progetti con OutputType != Library
+         (i test, qui). Le librerie in src/ non lo ricevono mai, quindi la proprieta' serve solo qui. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <!-- Microsoft.Extensions.TimeProvider.Testing 10.x avvisa che non supporta net48 (warning MSBuild, non errore). -->
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+  </PropertyGroup>
+</Project>

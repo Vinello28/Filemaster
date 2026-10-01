@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    Versioni in lockstep tra i pacchetti: NuGet emette per ogni ProjectReference il minimo aperto (">= x.y.z"); un mix tra
+    versioni sarebbe un TypeLoadException a runtime (niente default interface members su netstandard2.0).
+    Qui si trasforma il metadato ProjectVersion in un intervallo esatto "[x.y.z]". Si aggancia dopo
+    _GetProjectReferenceVersions (che GenerateNuspec esegue prima di PackTask) e vale solo per i progetti pacchettizzabili.
+  -->
+  <Target Name="ExactSiblingVersions"
+          AfterTargets="_GetProjectReferenceVersions"
+          Condition="'$(IsPackable)' == 'true' and '@(_ProjectReferencesWithVersions)' != ''">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Update="@(_ProjectReferencesWithVersions)"
+                                      ProjectVersion="[%(_ProjectReferencesWithVersions.ProjectVersion)]" />
+    </ItemGroup>
+  </Target>
+</Project>

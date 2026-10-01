@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Filemaster.UnitTests</RootNamespace>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <!-- net48 (solo Windows, o -p:IncludeNet48=true per compilare): il codice di test usa record, init, attributi nullable
+       -> polyfill propri; System.Net.Http non e' referenziato di default su .NET Framework ne' incluso da ImplicitUsings. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="PolySharp" PrivateAssets="all" />
+    <Reference Include="System.Net.Http" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Filemaster.Domain\Filemaster.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Filemaster.Application\Filemaster.Application.csproj" />
+    <ProjectReference Include="..\..\src\Filemaster.Infrastructure\Filemaster.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Filemaster\Filemaster.csproj" />
+  </ItemGroup>
+
+  <!-- Prova dell'asset netstandard2.0 sul runtime moderno: dotnet test ... -p:UseNs20Asset=true
+       (restore e build vanno rifatti passando e togliendo la proprieta': cambiano il grafo di restore).
+       Il metadato si applica a OGNI ProjectReference (se solo all'ultima, gli altri restano sull'asset moderno senza avvisi).
+       I Bcl.* servono perche' i tipi pubblici dell'asset netstandard2.0 (TimeProvider, IAsyncEnumerable) stanno in quei pacchetti. -->
+  <ItemDefinitionGroup Condition="'$(UseNs20Asset)' == 'true'">
+    <ProjectReference>
+      <SetTargetFramework>TargetFramework=netstandard2.0</SetTargetFramework>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemGroup Condition="'$(UseNs20Asset)' == 'true'">
+    <PackageReference Include="Microsoft.Bcl.TimeProvider" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
+  </ItemGroup>
+
+  <!-- Asset che AssetSelectionTests si aspetta per le librerie: il TFM omonimo (net8.0, net10.0); netstandard2.0 per net48 e con UseNs20Asset. -->
+  <PropertyGroup Condition="'$(TargetFramework)' != ''">
+    <ExpectedLibraryAsset Condition="'$(UseNs20Asset)' == 'true' Or '$(TargetFramework)' == 'net48'">.NETStandard,Version=v2.0</ExpectedLibraryAsset>
+    <ExpectedLibraryAsset Condition="'$(ExpectedLibraryAsset)' == ''">.NETCoreApp,Version=v$([MSBuild]::GetTargetFrameworkVersion('$(TargetFramework)'))</ExpectedLibraryAsset>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ExpectedLibraryAsset</_Parameter1>
+      <_Parameter2>$(ExpectedLibraryAsset)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

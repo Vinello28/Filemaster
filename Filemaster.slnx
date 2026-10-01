@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Filemaster.Domain/Filemaster.Domain.csproj" />
+    <Project Path="src/Filemaster.Application/Filemaster.Application.csproj" />
+    <Project Path="src/Filemaster.Infrastructure/Filemaster.Infrastructure.csproj" />
+    <Project Path="src/Filemaster/Filemaster.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Filemaster.UnitTests/Filemaster.UnitTests.csproj" />
+    <Project Path="tests/Filemaster.IntegrationTests/Filemaster.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

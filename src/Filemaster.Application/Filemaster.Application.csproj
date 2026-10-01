@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Filemaster.Application</AssemblyName>
+    <RootNamespace>Filemaster.Application</RootNamespace>
+    <PackageId>Filemaster.Application</PackageId>
+    <Description>Filemaster.Application: porte (interfacce), modelli di richiesta ed estensioni del client per l'API HTTP di Sharp-a-File.</Description>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
+    <PackageReference Include="Microsoft.Bcl.TimeProvider" />
+    <PackageReference Include="PolySharp" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Filemaster.Domain\Filemaster.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Filemaster.UnitTests" />
+  </ItemGroup>
+</Project>

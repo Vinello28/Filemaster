@@ -1,0 +1,15 @@
+bin/
+obj/
+artifacts/
+TestResults/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+.DS_Store
+coverage*.xml
+*.cobertura.xml
+*.nupkg
+*.snupkg
+.scratch/

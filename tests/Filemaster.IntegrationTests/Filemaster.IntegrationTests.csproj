@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Filemaster.IntegrationTests</RootNamespace>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
+
+  <!-- net48 (solo Windows, o -p:IncludeNet48=true per compilare): vedi Filemaster.UnitTests. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="PolySharp" PrivateAssets="all" />
+    <Reference Include="System.Net.Http" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Filemaster.Domain\Filemaster.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Filemaster.Application\Filemaster.Application.csproj" />
+    <ProjectReference Include="..\..\src\Filemaster.Infrastructure\Filemaster.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Filemaster\Filemaster.csproj" />
+  </ItemGroup>
+
+  <!-- Prova dell'asset netstandard2.0 sul runtime moderno (dotnet test ... -p:UseNs20Asset=true): come in Filemaster.UnitTests,
+       che ha anche l'autoverifica (AssetSelectionTests). -->
+  <ItemDefinitionGroup Condition="'$(UseNs20Asset)' == 'true'">
+    <ProjectReference>
+      <SetTargetFramework>TargetFramework=netstandard2.0</SetTargetFramework>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemGroup Condition="'$(UseNs20Asset)' == 'true'">
+    <PackageReference Include="Microsoft.Bcl.TimeProvider" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,216 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Una pull request ripartita cancella la corsa precedente; su main no, cosi' ogni commit ha il suo esito completo.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  # Versione dei pacchetti di questa corsa: la stessa per build e pack-smoke, mai confondibile con una release.
+  CI_VERSION: 0.0.0-ci.${{ github.run_number }}
+
+# `shell: bash` esplicito equivale a `bash --noprofile --norc -eo pipefail` (senza `shell:` Linux usa solo `-e`, senza
+# pipefail), e su Windows usa Git Bash: gli stessi script girano ovunque.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build e test (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # L'SDK viene da global.json (con rollForward latestFeature setup-dotnet installa l'ultimo 10.0.x); `8.0.x` porta
+      # il runtime 8 su cui girano i test net8.0.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      # Formattazione e analizzatori (TreatWarningsAsErrors): un avviso e' un errore anche qui.
+      # `dotnet format` processa ogni file solo sotto il primo TFM: servono due passaggi.
+      - name: Formattazione (TFM di default)
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Formattazione (net10.0)
+        env:
+          TargetFrameworks: net10.0
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Test net8.0
+        run: |
+          for p in UnitTests IntegrationTests; do
+            dotnet test --project "tests/Filemaster.$p" -c Release -f net8.0 --no-build
+          done
+
+      # La copertura gira solo su net10.0 (una fonte sola per la riga di log) e non e' un cancello.
+      - name: Test net10.0 con copertura
+        run: |
+          for p in UnitTests IntegrationTests; do
+            dotnet test --project "tests/Filemaster.$p" -c Release -f net10.0 --no-build \
+              --coverage --coverage-output-format cobertura --coverage-output "$p.cobertura.xml"
+          done
+
+      # Una soglia premia i test facili, ma il valore nel log rende visibile una regressione.
+      - name: Copertura (solo riga di log)
+        run: |
+          shopt -s nullglob
+          for f in TestResults/*.cobertura.xml; do
+            echo "$(basename "$f"): $(grep -o -m1 'line-rate="[0-9.]*"' "$f")"
+          done
+
+      # GitHub Actions imposta CI=true: build deterministica e SourceLink completo, come in release. Niente --no-build:
+      # la versione entra nell'AssemblyVersion, quindi il pack ricompila con la versione di questa corsa.
+      - name: Pack
+        run: dotnet pack -c Release --no-restore -p:Version="$CI_VERSION" -o artifacts
+
+      # --require-commit: qui si costruisce da un checkout vero (origin github.com), quindi SourceLink deve aver scritto
+      # il commit nel nuspec (il replay in container, senza .git, non lo chiede).
+      - name: Verifica dei pacchetti
+        run: bash eng/verify-packages.sh --require-commit artifacts "$CI_VERSION"
+
+      - name: Carica i pacchetti
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pacchetti
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  # E' l'unico modo di provare davvero l'asset netstandard2.0 sul runtime reale (net48: binding redirect, buffering del
+  # corpo delle richieste, 2 connessioni per host). Nessun job macOS: nessun codice dipende dall'OS, lo copre il Mac di
+  # sviluppo.
+  windows:
+    name: Build e test (Windows, net48)
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      # Su Windows i progetti di test hanno anche il TFM net48 (vedi tests/Directory.Build.props).
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      # Il test di memoria (trait Category=Memory) ha un passo suo: qui si esclude per non ripeterlo su ogni TFM.
+      - name: Test (net8.0, net10.0, net48)
+        run: |
+          for tfm in net8.0 net10.0 net48; do
+            for p in UnitTests IntegrationTests; do
+              dotnet test --project "tests/Filemaster.$p" -c Release -f "$tfm" --no-build --filter-not-trait "Category=Memory"
+            done
+          done
+
+      # Upload da 200 MB contro il server loopback: su net48 HttpClient bufferizza il corpo della richiesta, il test
+      # misura il consumo di memoria. Gira solo su net48, il TFM in cui il buffering e' un rischio (su Linux lo
+      # esegue gia' il passo di test generale).
+      # TODO(T6.1): il test non esiste ancora (lo scrive T6.1 in tests/Filemaster.IntegrationTests, marcato con
+      # [Trait("Category", "Memory")]). Con zero test selezionati MTP esce con 8: --ignore-exit-code 8 tiene verde il
+      # workflow nel frattempo. Quando il test c'e', togliere --ignore-exit-code 8 e aggiungere --minimum-expected-tests 1,
+      # cosi' un trait scritto male non passa in silenzio.
+      - name: Test di memoria (upload da 200 MB, net48)
+        run: >-
+          dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net48 --no-build
+          --filter-trait "Category=Memory" --ignore-exit-code 8
+
+  # Installa i .nupkg appena impacchettati da un feed locale in una console usa-e-getta, come farebbe un cliente
+  # (net8/net10 ovunque, net48 solo su Windows: lo decide lo script).
+  pack-smoke:
+    name: Pack smoke (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Scarica i pacchetti
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pacchetti
+          path: artifacts
+
+      # TODO(T5.5): eng/pack-smoke/run.sh <cartella-pacchetti> <versione> non esiste ancora. Il percorso della cartella
+      # e' relativo alla radice del repo: lo script lo rende assoluto.
+      - name: Pack smoke
+        run: bash eng/pack-smoke/run.sh artifacts "$CI_VERSION"
+
+  # Vulnerabilita' note nelle dipendenze (anche transitive). Job separato e non bloccante: un avviso su una
+  # dipendenza non deve fermare una pull request che non la riguarda. Va letto, non ignorato.
+  vulnerabilita:
+    name: Pacchetti vulnerabili (non bloccante)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Pacchetti vulnerabili
+        run: |
+          set -o pipefail
+          dotnet restore
+          # JSON e non testo: l'output testuale cambia con la lingua del runner. Con una sorgente irraggiungibile il
+          # JSON contiene "problems" ed exit 1: senza pipefail `| tee` lo nasconderebbe (fail-open), quindi si fallisce
+          # anche su "problems", non solo su "vulnerabilities".
+          dotnet list package --vulnerable --include-transitive --format json | tee vuln.json
+          if grep -q -e '"vulnerabilities"' -e '"problems"' vuln.json; then exit 1; fi
