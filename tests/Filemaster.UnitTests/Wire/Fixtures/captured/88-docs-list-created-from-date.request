@@ -1,0 +1,2 @@
+GET /documents?created_from=2026-01-01&created_to=2026-12-31
+# auth: X-API-Key (scope read)

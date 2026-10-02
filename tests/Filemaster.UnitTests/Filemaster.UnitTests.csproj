@@ -23,6 +23,12 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- Fixture golden del livello wire (dati, non codice): copiate accanto alla DLL e lette con un percorso relativo a
+       AppContext.BaseDirectory (funziona uguale su net8.0, net10.0, asset netstandard2.0 e net48). Vedi Wire/Fixtures/README.md. -->
+  <ItemGroup>
+    <None Update="Wire\Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Filemaster.Domain\Filemaster.Domain.csproj" />
     <ProjectReference Include="..\..\src\Filemaster.Application\Filemaster.Application.csproj" />

@@ -1,0 +1,2 @@
+GET /documents?owner=maria&tag=fattura
+# auth: X-API-Key (scope read)

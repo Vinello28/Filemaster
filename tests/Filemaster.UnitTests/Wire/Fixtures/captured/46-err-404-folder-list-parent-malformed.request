@@ -1,0 +1,2 @@
+GET /folders?parent_id=%20zz%2F
+# auth: X-API-Key (scope read)

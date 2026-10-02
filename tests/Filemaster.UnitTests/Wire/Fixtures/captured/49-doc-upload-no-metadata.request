@@ -1,0 +1,4 @@
+POST /documents
+# auth: X-API-Key (scope write)
+# curl: -F
+# curl: file=@fixtures/altro.pdf;type=application/pdf;filename=altro.pdf

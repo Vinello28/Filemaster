@@ -1,0 +1,6 @@
+POST /folders
+# auth: X-API-Key (scope write)
+# curl: -H
+# curl: Content-Type: application/json
+# curl: -d
+# curl: {"id":"FATTURE","name":"Fatture"}

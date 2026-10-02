@@ -1,0 +1,2 @@
+GET /documents?limit=12
+# auth: X-API-Key (scope read)

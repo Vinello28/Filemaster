@@ -1,0 +1,6 @@
+POST /documents
+# auth: X-API-Key (scope write)
+# curl: -H
+# curl: Content-Type: multipart/form-data; boundary=FMBOUND
+# curl: --data-binary
+# curl: @fixtures/body-both.bin

@@ -1,0 +1,2 @@
+GET /documents?q=fattura
+# auth: X-API-Key (scope read)

@@ -76,7 +76,8 @@ public sealed record ArxivarMetadata(
 
     /// <summary>
     /// Legge la sezione <c>arxivar</c> dei metadati di un documento. Non lancia mai: tollera sezione assente, tipi
-    /// sbagliati, campi in piu' e metadati che non sono un oggetto.
+    /// sbagliati, campi in piu', metadati che non sono un oggetto e nomi o stringhe con un surrogato isolato (<c>"\ud800"</c>,
+    /// JSON valido che il server conserva): un nome o un valore illeggibile vale come assente.
     /// </summary>
     /// <param name="metadata">
     /// I metadati interi del documento (<see cref="Document.Metadata"/>), non la sola sezione. L'elemento deve essere
@@ -107,9 +108,9 @@ public sealed record ArxivarMetadata(
     public static ArxivarMetadata? From(JsonElement metadata)
     {
         if (metadata.ValueKind != JsonValueKind.Object
-            || !metadata.TryGetProperty(SectionKey, out var section)
+            || !TryGetProperty(metadata, SectionKey, out var section)
             || section.ValueKind != JsonValueKind.Object
-            || !section.TryGetProperty("docnumber", out var docnumber)
+            || !TryGetProperty(section, "docnumber", out var docnumber)
             || !TryGetInt(docnumber, out var docnumberValue))
         {
             return null;
@@ -129,10 +130,38 @@ public sealed record ArxivarMetadata(
     }
 
     private static string? GetString(JsonElement section, string name) =>
-        section.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        TryGetProperty(section, name, out var value) && value.ValueKind == JsonValueKind.String ? ReadString(value) : null;
 
     private static int? GetInt(JsonElement section, string name) =>
-        section.TryGetProperty(name, out var value) && TryGetInt(value, out var number) ? number : null;
+        TryGetProperty(section, name, out var value) && TryGetInt(value, out var number) ? number : null;
+
+    // Il server conserva qualunque JSON valido per il suo parser, anche un surrogato isolato ("\ud800") in un nome o in un valore.
+    // System.Text.Json lo legge, ma TryGetProperty (confrontando un nome) e GetString (leggendo un valore) lanciano
+    // InvalidOperationException invece di restituire false: per questa classe un nome o un valore illeggibile e' assente.
+    private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+    {
+        try
+        {
+            return element.TryGetProperty(name, out value);
+        }
+        catch (InvalidOperationException)
+        {
+            value = default;
+            return false;
+        }
+    }
+
+    private static string? ReadString(JsonElement value)
+    {
+        try
+        {
+            return value.GetString();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
 
     private static DateTime? GetDate(JsonElement section, string name) =>
         GetString(section, name) is { } text

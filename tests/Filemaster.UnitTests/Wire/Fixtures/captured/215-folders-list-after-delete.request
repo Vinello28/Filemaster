@@ -1,0 +1,2 @@
+GET /folders
+# auth: X-API-Key (scope read)

@@ -63,7 +63,78 @@ progetto emerse in pianificazione.
 17. **Analyzer nei test**: CA2249 spinge a `string.Contains(char)` che non esiste su net48 -> `HashSet<char>`; xUnit2029 vuole
     `Assert.DoesNotContain` al posto di `Assert.Empty` su una lista filtrata; `Assert.Throws<ArgumentException>` vuole il tipo
     esatto (null e' `ArgumentNullException`, va testato a parte). In zsh `grep --include=*.cs` senza apici abortisce l'intero
-    comando ("no matches found"): quotare `--include='*.cs'`.
+    comando ("no matches found"): quotare `--include='*.cs'`. *(xUnit2029 l'ho rifatto io il 2026-10-02 scrivendo `Assert.Empty(x.Where(...))`:
+    rileggere questa lezione prima di scrivere test.)*
+18. **`dotnet test --no-build` dopo un build fallito prova il binario vecchio**: exit 0 e totale invariato (2026-10-02: 468 prima e dopo un
+    test nuovo che non compilava). Il test si lancia solo se `$?` del build e' 0 (`dotnet build ...; B=$?; [ $B -eq 0 ] && dotnet test ...`) e
+    si controlla che il totale sia cambiato.
+19. **Un subagent caduto a meta' (rate limit, 429) lascia uno stato parziale che non e' ne' buono ne' da buttare.** Prima di rilanciare:
+    elenco dei file, `build --no-incremental`, test, lettura integrale, controllo contro la fonte (qui il server). Rilanciare alla cieca rischia
+    di sovrascrivere lavoro corretto; si colmano solo i buchi (T3.1: mancavano i soli test di forma e l'aggiornamento di todo/lessons).
+20. **Un test di forma o di confine si prova con una mutazione**: si rompe la regola a mano (una per volta, con copia in scratchpad e `cmp` finale)
+    e si guarda che fallisca proprio quel test. Un mutante deve aggirare compilatore e analizzatori, che lo possono fermare prima del test
+    (un `init` su una proprieta' gia' assegnata dai test da' CS8852; un membro in mezzo a un commento XML da' CS1591): usare un membro nuovo e
+    non usato. Per i limiti, un mutante per limite (255->256, 4096->4097, `>`->`>=`). Dettagli da reflection: `GetMethods()` di un'interfaccia
+    include i getter (`IsSpecialName`); il costruttore implicito non ha doc e CS1591 non lo chiede; i membri di un record hanno
+    `[CompilerGenerated]`; il costruttore posizionale si documenta con le proprieta'.
+21. **Write/Edit decodifica `\uXXXX` anche nei COMMENTI** (T3.3), non solo nelle stringhe: estende la lezione 15. Per citare un escape in un commento si scrive a parole;
+    in una stringa si usa `\U0000005C` + testo oppure un segnaposto con `.Replace`.
+22. **System.Text.Json, misurato (T3.3)**: `JsonDocument.Parse` accetta UTF-8 non valido e surrogati isolati (`\ud800`), poi `GetString()` lancia `InvalidOperationException`;
+    `TryGetDateTimeOffset` su una data **senza offset** restituisce true con l'**ora locale della macchina**; `Parse(ReadOnlyMemory<byte>)` rifiuta il BOM con `JsonReaderException`;
+    `JsonElement.Clone()` su `default` lancia. Quindi: BOM tolto a mano, `occurred_at` senza `Z`/offset = non conforme, nessuna eccezione di STJ fuori dall'API pubblica.
+23. **Analizzatori nei test che spingono verso API assenti su net48**: CA1872, CA1850, CA1845, CA2263 su net8/net10 suggeriscono API che net48 non ha: servono forme alternative o `#pragma` motivati.
+    `TheoryData<string?>` con `null` da' CS8625 (un `[Fact]` a parte); un mutante con `if (false)` da' CS0162 (condizione non costante); xUnit2000 vuole il valore costante come `expected`.
+24. **Un mutante "ricodifica via stringa" sopravvive a ogni corpo UTF-8 valido** (la ricodifica e' l'identita'): serve un vettore con byte non validi, firmato da openssl da file.
+    Un confronto a tempo costante non e' misurabile da un test: si verifica l'esito (ogni posizione, ogni lunghezza) e si legge il codice.
+25. **Sottoclassare `Stream` con `TreatWarningsAsErrors`** (T3.2): CA1513 (`ObjectDisposedException.ThrowIf` su net8+ con `#if NET`, ripiego a mano su ns2.0), CA1844 (override di `ReadAsync(Memory)`/`Read(Span)`
+    sotto `#if NET`); nei test CA1835/CA1845/CA2022 (net48 non ha le API suggerite: `#pragma` motivato; CA2022 impone di usare il risultato di `Read`) e CA1859 sugli helper che restituiscono `IReadOnlyList`.
+    Un test di forma sui "setter pubblici" deve ignorare quelli **ereditati** da `Stream` (`Position`, `ReadTimeout`...): si guarda `GetBaseDefinition().DeclaringType`.
+26. **`[EnumeratorCancellation]` solo sull'iteratore privato**; sul metodo pubblico non iteratore da' CS8424. Pattern della validazione eager: metodo pubblico non iteratore che valida e poi restituisce l'iteratore privato.
+27. **I record del Domain non si copiano con `with`** (proprieta' `{ get; }`): le factory dei test prendono un parametro. Due `Document` creati separatamente non sono uguali (`JsonElement` per identita'): le sequenze attese
+    riusano le stesse istanze.
+28. **Un mutante puo' essere fermato dal compilatore** (CS0161 iteratore senza `yield`, CS0414 campo mai letto, CS1571 `<param>` duplicato se si inserisce un membro sopra un blocco doc, CS1591): vale come "preso" solo se lo si dichiara;
+    meglio riscrivere il mutante in modo che compili. `JsonDocument.Parse` mantiene il testo grezzo: un filtro compatto da' `GetRawText()` identico, e un elemento letto dopo lo smaltimento lancia `ObjectDisposedException`
+    (e' cosi' che si prova che il documento del filtro e' smaltito e non clonato).
+29. **Il tool Write lascia passare lettere accentate nei commenti**: lanciare il controllo ASCII (script Python) dopo OGNI scrittura; un `replace` con escape non corregge i byte `c3 a0` (serve un replace su bytes).
+    Un `Assert.ThrowsAsync(...).GetAwaiter().GetResult()` in un test sincrono da' xUnit1031: il test diventa `async`. Una base di test astratta generica con un `Harness` per porta evita di duplicare i test (xunit.v3 la eredita).
+30. **Il repo puo' cambiare sotto i piedi (2026-10-02): l'utente ha committato e pubblicato `init`** mentre i subagent lavoravano. Prima di ogni compito che dipende dallo stato di git (`ls-files`, `release.yml`, `--require-commit`)
+    rilanciare `git status`/`git log` e rileggere il brief dei subagent: il brief diceva "il repo non ha commit" ed e' diventato falso. Prima di ogni push dell'utente conviene un controllo dei segreti sul tracciato.
+31. **Le mutazioni si fanno su una COPIA del repo, mai sull'albero vero (2026-10-02, T4.1).** Il subagent di T4.1 e' stato interrotto con la mutazione M10 ancora applicata a
+    `DownloadStream.cs` (il `Dispose` della risposta commentato): l'albero "verde" in realta' era mutato. Dopo ogni interruzione, prima di fidarsi del codice, confrontare con `cmp` ogni file nel
+    backup `orig/` con quello vivo. Meglio: `rsync -a --exclude .git --exclude bin --exclude obj Filemaster/ <scratchpad>/mutroot/`, `dotnet restore` + build li', e lo script gira solo li'
+    (cosi' si puo' anche leggere il codice vero mentre le mutazioni girano). Lo script deve avere un **watchdog** sul test (`Popen(start_new_session=True)` + `os.killpg` dopo ~240 s): un mutante
+    che smette di rilasciare una risorsa (risposta HTTP, lettura bloccata) manda un test in stallo a 0% CPU, e senza watchdog la run si ferma. Uno stallo conta come "preso", ma e' un segnale:
+    i test che aspettano senza limite non devono mai poter bloccare la CI (usare `Waiting.Within` o `Timeout`). In zsh `$ids` non si divide in argomenti: scrivere gli id uno a uno o usare `${=ids}`.
+32. **Un mutante "equivalente" su .NET 10 puo' non esserlo su net48 (IPOTESI, non verificata: serve la CI Windows).** Misurato solo su .NET 10: `Uri.Query`/`Uri.Fragment` restituiscono `?`/`#`
+    anche se vuoti ("https://h/?" -> `Query = "?"`), quindi `OriginalString.IndexOf('?')` e' ridondante li' (M30 non preso). Su .NET Framework si pensa che restituiscano `""`, e il controllo servirebbe:
+    non l'ho misurato. Il test c'e' e conta su net48 (Windows CI): scriverlo come "non verificato in locale" invece di toglierlo.
+33. **Un mutante fermato dal compilatore (CA1822, CS0649, IDE0044) non e' una prova**: si rifa' in una forma che compila (`Restart(_requestTimeout)` invece di togliere la riga; `< 0` invece di `!= 0`;
+    `... || Volatile.Read(...) == 1` invece di togliere l'`Interlocked`). E un mutante NON preso vale un test nuovo, poi si rilancia: in T4.1 M24 (`X-Request-ID` di risposta non ripulito) e M35 (retry di un
+    download non-GET) erano scoperti.
+34. **Gli helper di test che aspettano hanno un limite DENTRO l'helper, non nei singoli test (2026-10-02, T4.1).** `HangingStream` (lettura bloccata finche' la risposta non e' smaltita) non aveva limite: sotto 4 mutanti
+    (M10, M16, M33, M34) sei test restavano a 0% CPU. Ora `Read`/`ReadAsync` lanciano `TimeoutException` dopo 10 s e `ReadStarted` passa da `Waiting.Within`; i quattro mutanti falliscono in pochi secondi, senza watchdog.
+    Attenzione: `Task.Wait(timeout)` su un task fallito lancia `AggregateException` (rompe i test che si aspettano l'eccezione vera): per aspettare con un limite senza cambiare l'eccezione usare
+    `((IAsyncResult)task).AsyncWaitHandle.WaitOne(limite)` e poi `GetAwaiter().GetResult()`. Il guasto l'ha mostrato un mutante banale (M36) che faceva fallire un test non correlato: **dopo ogni modifica agli helper di test
+    si rilancia tutta la suite sull'albero vero, non solo quella del mutante**.
+35. **`System.Text.Json` lancia `InvalidOperationException` (non restituisce false) su un surrogato isolato in un NOME o in un VALORE (2026-10-02, T4.2).** `GetString` lancia sempre; `TryGetProperty(name)` lancia
+    solo quando il confronto arriva a decodificare l'escape: procede carattere per carattere (decodifica solo se quanto precede coincide col nome cercato) e cerca partendo dall'ULTIMA proprieta'. Un test con il nome cattivo
+    PRIMA di quello cercato, o che inizia con un carattere diverso, non lancia mai e lascia vivi i mutanti che tolgono la protezione (in T4.2 D3/D4: preso solo con `{"arxivar":{...},"\ud800\ud800":0}`). Il Domain prometteva
+    "non lancia mai" senza provarlo: `ArxivarMetadata.From` era scoperto. `JsonDocument.Parse` non rifiuta ne' surrogati isolati ne' UTF-8 non valido: serve un controllo rigido all'ingresso (`UTF8Encoding(throwOnInvalidBytes:
+    true).GetCharCount`) e un `try/catch` sulle letture. `GetRawText()` lancia su UTF-8 non valido dentro i metadati. Ogni promessa "non lancia mai" nei doc XML va provata con un test su un surrogato isolato.
+36. **Un overload ricorsivo in un helper di test uccide il processo.** `Unexpected<T>(Func<T>) => Unexpected(() => read())` si risolve su se stesso: StackOverflow, exit 134 e "Nessun test eseguito". I due overload devono
+    condividere un metodo privato.
+37. **`Uri.EscapeDataString` sostituisce un surrogato isolato con `%EF%BF%BD` senza lanciare** (misurato su .NET 10): va rifiutato PRIMA, con `ArgumentException` col nome del parametro. Su netstandard2.0/net48 mancano
+    `HttpUtility`, `string.Split(string)` e `Substring` su span: `Remove(0, n)`, `IndexOf`. CA1846 (Substring), CA2249 (`IndexOf` al posto di `Contains(char)`) e xUnit2000 sono errori anche nei test; un mutante con
+    `IndexOf` viene fermato da CA2249 (lezione 33): rifarlo con `Contains('*')`.
+38. **Date: `DateTimeOffset.TryParseExact` con `K` accetta l'assenza di fuso (ora locale) e `+0200`.** I due formati del server (`...FFFFFFF'Z'` con `AssumeUniversal`, `...FFFFFFFzzz`) accettano anche `+0200` e `.Z`,
+    rifiutano `+15:00` e istanti UTC fuori intervallo (restituiscono false, senza lanciare). Con `ar-SA` come cultura corrente una data non invariante esce `1448-04-20`. Il mutante "`Z` letta senza `AssumeUniversal`" e' preso
+    solo se il fuso della macchina non e' UTC (in UTC e' equivalente: lezione 32).
+39. **Alla consegna di un subagent controllare i processi in background rimasti (`ps`), compresi i MIEI.** Il run di mutazione di T4.1 (`run.py M10..M30` + `dotnet test`) era ancora vivo dopo 2 ore su una copia del
+    repo: consumava CPU e avrebbe falsato i tempi. `ps aux | grep -E 'run.py|dotnet test|testhost'` prima di ogni verifica, e `kill` dei soli processi riconosciuti come propri (cwd nello scratchpad).
+40. **I numeri delle fixture citati in un brief vanno riverificati nel file indice.** Il brief di T4.2 citava le catture 80-82 per `created_from`, le giuste sono 87-89 (87 = senza fuso, 400). Il subagent l'ha
+    segnalato: vale per ogni riferimento a "fixture N" scritto a memoria.
+41. **Rapporto del subagent != prova.** Per T4.2 il rapporto era corretto in tutto (build, 2387 test, format, pack, grep), ma la lacuna piu' utile (il Domain che non manteneva la promessa) l'ho trovata e chiusa solo
+    rileggendo la segnalazione e riproducendola con un test che falliva prima del fix: riprodurre SEMPRE un difetto segnalato prima di correggerlo, e provare il fix con mutanti (D1-D5).
 
 ## Esiti degli spike
 

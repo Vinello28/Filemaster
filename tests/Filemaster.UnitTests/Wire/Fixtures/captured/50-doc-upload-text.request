@@ -1,0 +1,8 @@
+POST /documents
+# auth: X-API-Key (scope write)
+# curl: -F
+# curl: file=@fixtures/note.txt;type=text/plain;filename=note.txt
+# curl: -F
+# curl: owner=maria
+# curl: -F
+# curl: tag=nota

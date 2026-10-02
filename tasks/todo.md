@@ -283,10 +283,123 @@ pinnate per SHA completo + commento col tag: checkout/setup-dotnet/softprops cop
   **Decisioni mie, prese ora** (le segnalo a fine fase): `ContactCategory.Id`/`Contact.CategoryId` e `WebhookEvent.DeliveryId` restano `string` (nessun nuovo tipo forte non
   pianificato); **un evento di tipo noto con payload malformato diventa `UnknownWebhookEvent`** col payload grezzo (coerente con "gli sconosciuti non lanciano mai",
   e un 500 del ricevitore innescherebbe ritentativi inutili del server: la consegna e' "almeno una volta"); `Deduplicated` vive in `UploadResult` (T3), non in `Document`.
-- [ ] **T3.1** Application: porte, richieste, query, `Page` -> **T3.2** estensioni (paginazione, Arxivar, `VerifiedContentStream`).
-- [ ] **T3.3** `WebhookSignatureVerifier` + parser (indipendente, serve solo T2.3).
-- [ ] **T4.1** Trasporto (retry, problem mapping, helper `Compat`, `FilemasterOptions`) -> **T4.2** DTO/convertitori wire con
-  fixture golden (reali se T0.3 ha funzionato, altrimenti derivate e marcate) -> **T4.3** adapter per risorsa (documenti, cartelle, contatti, tenant/health) -> **T4.4** root `Filemaster`.
+- [x] **T3.1** *(fatto 2026-10-02; il subagent era caduto per rate limit a meta': ho ispezionato lo stato parziale, trovato completo salvo i test di forma, e li ho scritti io)*
+  Application: 5 porte (`IDocumentStore` 10 metodi, `IFolderCatalog` 4, `IContactDirectory` 3, `ITenantInfo` 1, `IFilemasterHealth` 2), facciata `IFilemasterClient`
+  (5 proprieta', non eredita le porte, non e' `IDisposable`), input a costruttore + `set` con `Validate()` (`UploadDocumentRequest`, `DocumentQuery`, `ContactQuery`,
+  `CreateFolderRequest`, `UpdateFolderRequest`), output `Page<T>`, `PageRequest`, `ByteRange`, `ContentRange`, `UploadResult`, `DocumentContent : IDisposable`,
+  `HealthProbeResult`, `RequestChecks` interno. **Verificato da me**: build `--no-incremental` 0 avvisi su 3 TFM, **478 test su net10 e net8**, integration 4/4,
+  format x2, **asset ns2.0 478/478**, nessun CR/TAB/non-ASCII. **Limiti riletti contro il server @8aec8bb** (non fidandomi del brief): owner/tag 255 caratteri dopo il trim
+  (`Validation.MaxLength`), campi multipart 4096 byte con confronto `>` (`ReadLimitedAsync`), metadati 64 KiB (`DocumentMetadata.ParseObject`), filtro 64 nodi / 16 livelli,
+  pagina default 50 / max 200, PATCH cartella `{id,name}` con "almeno uno". **Controllo di mutazione**: 3 violazioni di forma (token senza default, `init`, `System.Net.Http`)
+  prese ciascuna dal suo test; 6 mutazioni dei limiti (255->256, 4096->4097, nodi 64->65, limit 200->201, profondita' 16->17, `>`->`>=` sui 64 KiB) prese da 1-6 test ciascuna.
+  Nuovo `tests/Filemaster.UnitTests/Application/ApplicationShapeTests.cs`: niente `init`/`required`; setter pubblici solo sui 5 input (classi sealed con `Validate()`);
+  ogni metodo delle porte e' `Task` + `...Async` + `CancellationToken` finale con default; la facciata espone le 5 porte e basta; Application non referenzia `System.Net.Http`,
+  `Microsoft.Extensions.*` ne' i livelli sopra; ogni tipo/proprieta'/campo/metodo con `<summary>` nel file XML.
+  **Non verificato**: l'uso reale da C# 7.3 / net48 (lo prova T5.5 sul pacchetto). **Obblighi per T3.2/T4**: (1) l'adapter chiama `Validate()` **prima** di aprire la connessione e
+  prima di leggere lo stream; (2) l'adapter manda ogni testo cosi' com'e' (il limite e' misurato sul valore dell'utente); (3) `OpenContentAsync` con 416 -> `UnexpectedResponseException`
+  (`StatusCode` 416); (4) `DocumentContent` riceve la risposta HTTP come `owner`; (5) `HealthProbeResult` per 200 **e** 503 (il 503 di `/readyz` non e' problem+json);
+  (6) le scritture e le verifiche non si ritentano, solo i GET; (7) i nomi dei parametri sono quelli canonici (`filename`, `sender`...), non gli alias italiani del server.
+  **Confronti col server chiusi dopo il parere (2026-10-02), per la serializzazione della query string in T4.3**: `kind` sul filo e' `external|user|group`, confronto esatto
+  (`Wire<ContactKind>`, ordinale, minuscolo); `category_id` passa da `FolderCodes.Optional` (stessa regola di `FolderCode`); `q` e' un testo trimmato, vuoto = assente;
+  `created_from`/`created_to` accettano **solo** `yyyy-MM-dd` o un istante RFC 3339 **con fuso** (`...Z` o `...+02:00`; un istante senza fuso e' 400): l'adapter serializza
+  il `DateTimeOffset` in uno di quei due formati con `CultureInfo.InvariantCulture`, mai `ToString()`; elenco cartelle = `GET /folders?parent_id=` (non paginato, `{items:[...]}`);
+  categorie = `GET /contact-categories` (non paginato). Resta **non verificato** il corpo JSON dei contatti (nessuna fixture reale: T6.3/e2e).
+- [x] **T3.3** *(fatto 2026-10-02, subagent; verificato da me)* `WebhookSignatureVerifier` + `WebhookSignatureResult`/`WebhookSignatureFailure` + `WebhookHeaders` + `WebhookEventParser` in
+  `src/Filemaster.Application/Webhooks/`, 273 test nuovi in `tests/Filemaster.UnitTests/Application/Webhooks/`. **Verificato da me sull'albero**: build `--no-incremental` 0 avvisi, **751 test su net10 e net8**,
+  integration 4/4, format x2, **asset ns2.0 751/751**, pack 4+4 + `verify-packages.sh` ok, nuspec di Application: `Microsoft.Bcl.*` solo nel gruppo netstandard2.0 (8.0.0 / 8.0.1), nessun CR/TAB/non-ASCII.
+  Letto per intero il codice del verificatore: tutti i candidati `v1` confrontati senza uscita anticipata, firma prima della finestra, limiti con somme (nessun overflow con `t` vicino a `long.MaxValue`), parsing ASCII a mano.
+  **Mutazione**: il subagent ha fatto 35 mutanti (33 presi, 1 equivalente, 1 non misurabile: i tempi del confronto costante); io ne ho rifatti 2 (`>`->`>=` sul futuro: preso da 4 test; uscita al primo match: equivalente, non preso, come dichiarato).
+  Vettori di firma da **openssl** su file (non circolari), segreto fittizio `whsec_NotARealSecretTestVectorOnly0123`; corpi con ASCII, UTF-8 grezzo con CRLF, byte non UTF-8, vuoto, BOM.
+  **Fatti letti dal server**: payload `document.uploaded` = `{document_id, filename, sha256, deduplicated}` (**`filename`**, non `original_filename` come l'API), `document.deleted` = `{document_id, sha256}` (sha256 anche null),
+  `document.integrity_failed` = `{document_id, sha256, detail}` (detail anche null); payload con `JsonSerializerDefaults.Web` (snake_case), null non omessi; corpi veri ASCII puro (encoder STJ di default); `occurred_at` UTC con `Z`, 0-6 decimali.
+  **Decisioni del subagent che accetto (da segnalare a fine fase)**: (1) `TryParse(null)` lancia `ArgumentNullException` (il brief diceva "mai eccezione": un body null e' un errore di programmazione, come in `Verify`; body vuoto/non valido -> false);
+  (2) segreto di soli spazi rifiutato, mai trimmato; (3) header null/vuoto/solo spazi = `MissingHeader`, elemento vuoto/virgola finale/senza `=` = `MalformedHeader`; (4) il messaggio firmato usa il testo **grezzo** di `t` (`t=01700000000` non e'
+  `t=1700000000`); (5) tolleranza a secondi interi (500 ms vale 0 s ma e' positiva); (6) chiavi dell'header case-sensitive, spazi solo ai bordi dell'elemento (SP/HTAB), non attorno a `=`; (7) **BOM UTF-8 tollerato** dal parser (STJ lo rifiuta);
+  (8) **`occurred_at` senza `Z`/offset = busta non conforme** (STJ lo leggerebbe come ora locale della macchina: misurato +02:00); (9) `delivery_id` vuoto/solo spazi = busta non conforme, `payload` assente accettato (`Undefined`);
+  (10) per gli eventi noti **anche un campo nullable assente e' malformato -> `UnknownWebhookEvent`**; `null` esplicito ammesso solo per `deleted.sha256` e `integrity_failed.detail`; `uploaded.sha256` null e' malformato; campi extra ignorati;
+  (11) `UnknownWebhookEvent.EventType` per un noto malformato e' il nome noto; (12) UTF-8 non valido/surrogati isolati: busta -> false/`FormatException`, dentro il payload di un noto -> `Unknown`; (13) nessun overload `string` per il corpo.
+  **Non verificato**: nessun corpo catturato dal server vero; confronto a tempo costante non misurabile; net48 solo compilato (0 avvisi), non eseguito; STJ 8.0.5 del pacchetto su net48 non provato; mutazioni solo su net10.
+- [x] **T3.2** *(fatto 2026-10-02, subagent; verificato da me)* Estensioni dell'Application: `Common/Pagination.cs` (internal: ciclo condiviso), `Documents/DocumentStoreExtensions.cs` (`EnumerateAsync`,
+  `FindByArxivarDocnumberAsync`, `OpenVerifiedContentAsync`), `Documents/DocumentExtensions.cs` (`GetArxivarMetadata`), `Documents/VerifiedContentStream.cs`, `Contacts/ContactDirectoryExtensions.cs` (`EnumerateAsync`);
+  197 test nuovi + supporti (`FakeDocumentStore`, `FakeContactDirectory`, `ScriptedStream`, `PagedScript`, `TestData`); `ApplicationShapeTests` esteso (setter ereditati da `Stream` non contano; nuova regola
+  sui metodi statici async: `CancellationToken` finale con default). **Verificato da me sull'albero**: build `--no-incremental` 0 avvisi, **948 test su net10 e net8**, integration 4/4, format x2,
+  **asset ns2.0 948/948**, pack 4+4 + `verify-packages.sh` ok, nuspec di Application invariato (Bcl.* solo nel gruppo netstandard2.0), 51 file `.cs` senza CR/TAB/non-ASCII. Letto il codice di paginazione,
+  estensioni e `VerifiedContentStream`. **Mutazione del subagent**: 62 mutanti su net10 + 4 su ns2.0, 61 presi dai test, 1 dal compilatore (CS1591), nessuno sopravvissuto (tabella in scratchpad `mut32/FINAL-results-62.txt`).
+  **Decisioni del subagent che accetto (da segnalare a fine fase)**: `docnumber <= 0` rifiutato con `ArgumentOutOfRangeException` (il server importa solo `DOCNUMBER > 0`, ma il suo filtro non valida il segno: rifiutare ora e' reversibile,
+  accettare no; `ArxivarMetadata.From` in lettura resta tollerante); `FindByArxivarDocnumberAsync` legge a pagine da 200 e restituisce **lista**; cursore ripetuto/gia' visto/**vuoto** -> `UnexpectedResponseException` (status 200) *dopo* gli
+  elementi della pagina e senza altre richieste; validazione eager solo per `EnumerateAsync` (le altre estensioni async lanciano dentro il Task, come gli adapter), annullamento controllato prima di ogni pagina; `VerifiedContentStream`: una
+  lunghezza diversa e' verdetto negativo anche con hash giusto (`isTruncated` solo se meno byte), il rilancio dopo il verdetto e' un'eccezione nuova con la prima come `InnerException`, un errore dello stream interno non e' un verdetto,
+  dispose anticipato = nessun verdetto; `OpenVerifiedContentAsync` usa `leaveOpen: true` con `owner: original` (lo stream si smaltisce una volta, poi la risposta HTTP) e `expectedLength = document.SizeBytes`; risposta parziale ->
+  `UnexpectedResponseException` con status **206**.
+  **Non verificato**: net48 solo compilato; uso reale da C# 7.3 (T5.5); nessun test contro un server vero (nessuna fixture di `/documents/{id}/content`: T4/T6); thread concorrenti non provati (lo stream e' documentato non thread-safe);
+  confronto a tempo costante non misurabile.
+- [ ] **Fatto nuovo (2026-10-02): il repo `Filemaster` ora ha il commit `init` (9997cfb) e `main` e' allineato a `origin/main` (github.com/Vinello28/Filemaster).** Non l'ho fatto io (nessun `git` in scrittura da parte mia ne' dei
+  subagent): l'ha creato e pubblicato l'utente tra due mie verifiche. Controllato: 103 file tracciati, **nessun segreto** (`.scratch/` e' ignorato, nessuna fixture/chiave tracciata). Il commit contiene T1-T3.1 e le prove di T5; le modifiche successive
+  (T3.1 test di forma, T3.2, T3.3, todo/lessons) sono non committate. Conseguenze: la CI di GitHub puo' essere gia' partita su `init` ed essere **rossa per `pack-smoke`** (manca `eng/pack-smoke/run.sh`, `# TODO(T5.5)`, noto): non posso leggerla da qui
+  (`gh` non installato). Il primo segnale reale su Windows/net48 verra' da li'.
+- [ ] **Ordine deciso con il parere (2026-10-02): T3.3 -> T3.2 -> T4.x, tutto in SERIE** (Infrastructure compila Application: anche cartelle "diverse" si pestano, lezione 14), **un subagent per
+  compito, ogni brief con punti di controllo verdi e nota di avanzamento nello scratchpad** (un 429 deve lasciare un albero ripartibile, lezione 19).
+  Ogni compito di codice finisce con `CI=true dotnet pack` + `eng/verify-packages.sh` + lettura dei gruppi di dipendenze del nuspec.
+  **Dipendenze di pacchetto**: `Microsoft.Bcl.AsyncInterfaces` (per `IAsyncEnumerable`) e `Microsoft.Bcl.TimeProvider` sono GIA' su Application (solo ns2.0) e in `expected_external()`:
+  verificato 2026-10-02, nessuna modifica attesa; compaiono solo nel gruppo netstandard2.0 del nuspec, con floor 8.0.x (ignore di dependabot). Il test di forma non le controlla: le controlla il verify.
+  **Divisione dei compiti sugli stream (da scrivere in entrambi i brief)**: T3.2 `VerifiedContentStream` possiede la **verifica dello SHA-256**: solo contenuto intero (rifiuta un `ByteRange`),
+  verdetto solo a EOF, dispose anticipato = nessun verdetto e nessuna eccezione. T4 possiede il **rilevamento del troncamento**: un wrapper conta i byte contro `Content-Length` (non ci si fida del
+  gestore HTTP, che su net48 e .NET moderno non si comporta allo stesso modo su un EOF prematuro) e lancia `ContentIntegrityException(isTruncated: true)`.
+- [x] **T4.1** *(fatto 2026-10-02, subagent caduto per 429 dopo il punto di controllo 4, ripreso e **verificato da me**)* Trasporto dell'Infrastructure:
+  `FilemasterOptions` (`BaseAddress`, `ApiKey`, `RequestTimeout` 30 s, `TransferTimeout` 30 min, `Retry`; `Validate()` non muta `BaseAddress`, `ToString` nasconde la chiave) e
+  `FilemasterRetryOptions` (`MaxAttempts` 3, 1..10; `InitialDelay` 500 ms; `MaxDelay` 10 s), `Errors/{ProblemBody,ProblemMapper}` (slug prima, status ripiego, 415 sempre per status),
+  `Transport/{FilemasterTransport,DownloadStream,Deadline,RetryPolicy,BodyReading,NetworkFailures,TransportRequest,TransportResponse,TransportHooks}` (tutto internal; tre modalita'
+  `SendBufferedAsync`/`SendDownloadAsync`/`SendUploadAsync`). **Prova**: restore + build `--no-incremental` 0 avvisi; **1544 unit** (net10, net8, asset ns2.0) + 4 integration verdi;
+  format x2 exit 0; 31 file `.cs` senza CR/TAB/non-ASCII; pack 4+4 + `verify-packages.sh` ok, nuspec Infrastructure: Bcl.* solo nel gruppo ns2.0 (8.0.0 / 8.0.1), Logging.Abstractions 8.0.3.
+  **Mutazioni** (39 mutanti su copia del repo, lezione 31): tutte prese tranne **M30** (`?`/`#` vuoti nell'indirizzo base: equivalente su .NET 10, dove `Uri.Query` restituisce `?` anche vuota; il test
+  c'e' e conta su net48, **non verificato in locale**); 3 fermate dal compilatore (M15, M22, M23) e rifatte in altra forma (M15b, M22b, M23b: prese); M24 e M35 NON prese al primo giro -> aggiunti 2 test, poi prese
+  (`A_response_request_id_that_is_too_long...`, `A_download_that_is_not_a_GET_is_never_retried...`). M10, M16, M33, M34 mandavano **in stallo** sei test (lettura mai rilasciata, nessun limite): **corretto** con un limite di 10 s dentro `HangingStream` (e `ReadStarted` via `Waiting.Within`, lezione 34); rilanciati, falliscono in pochi secondi senza watchdog. Test di superficie pubblica provato con M36/M37 (`RetryPolicy`, `ProblemMapper` resi `public`): preso da `Every_public_type_of_the_assembly_is_one_of_the_allowed_ones...`. Il subagent aveva aggiunto 3 test dopo l'ultimo punto di controllo (1539 -> 1542, `TransportTimeoutTests`, corpi di errore che si fermano): riletti, asserzioni forti. Tutto verificato di nuovo dopo l'ultima modifica: build `--no-incremental` 0 avvisi, 1544 unit su net10/net8/ns2.0, 4 integration, format x2, ASCII.
+  **Decisioni del subagent da riportare**: `RequestTimeout` = UNA scadenza per l'intera chiamata (tentativi e attese compresi); un timeout del client NON si ritenta; `Retry-After` rispettato fino a
+  `MaxDelay`; il trasporto copia le opzioni nel costruttore; qualunque cancellazione diversa dal token del chiamante e' `FilemasterTimeoutException` (anche `HttpClient.Timeout` finito); corpo di
+  errore letto al massimo 16 KiB; slug `error` con 5xx -> `ServerErrorException`, con altri status -> `UnexpectedResponseException`; `X-Request-ID` e' lo stesso per tutti i tentativi (32 esadecimali).
+  **Obblighi per T4.3/T4.4**: l'`HttpClient` del trasporto deve avere `Timeout` infinito; il trasporto smaltisce il messaggio => uno `StreamContent` chiuderebbe lo stream dell'utente (serve un
+  contenuto che non lo chiude); `AllowAutoRedirect=false` nella factory (la chiave `X-API-Key` si copia nei redirect); **non** abilitare `AutomaticDecompression` (il conteggio dei byte contro
+  `Content-Length` presuppone corpo non compresso); su net48 `HttpClientHandler` puo' bufferizzare l'upload (`AllowWriteStreamBuffering`) = "non verificato in locale, Windows CI/T6.1";
+  la superficie pubblica ora e' solo `{FilemasterOptions, FilemasterRetryOptions}` (`FilemasterHttp` arriva in T4.4: `TODO(T4.4)` nel test di forma).
+  **Non verificato**: net48, comportamento di `DownloadStream` col vero gestore HTTP (i test usano un gestore finto), il 413 con connessione chiusa a meta' upload (puo' arrivare come
+  `ConnectionException`: documentato), nessun 429 reale (il server non ne emette sulle API: i test 429 sono derivati).
+- [x] **T4.2** *(fatto 2026-10-02, subagent `a412a3bd`, **verificato da me**)* Livello wire dell'Infrastructure, tutto internal, in `src/Filemaster.Infrastructure/Wire/` (17 file): lettura manuale con
+  `JsonElement` + scrittura con `Utf8JsonWriter` (niente DTO, niente reflection, nessuna `JsonSerializerOptions`; scelta documentata in `WireJson.cs`). Lettori `Folder`, `Tenant`, `Document` (+ contatti,
+  `UploadResult`), `IntegrityCheck`/`BulkVerifyResult`, `Contact`, `ContactCategory`, `Page<T>`, `HealthWire` (aggiunto, non era nel brief); costruttori di query (`DocumentQuery`/`ContactQuery`/cartelle +
+  `PageRequest`), corpi JSON (crea/aggiorna cartella, move, move/verify in blocco), campi dell'upload, `Routes`; `ContentDispositionHeader` (lettura `filename*` > `filename`; scrittura con ripiego ASCII +
+  `filename*=utf-8''`), `ContentRangeHeader` (rigido), `DownloadHeaders`. I lettori prendono `(byte[]? body, WireContext)`; ogni risposta non interpretabile e' `UnexpectedResponseException` con lo status vero
+  (mai `JsonException`/`InvalidOperationException`/`KeyNotFoundException`; UTF-8 non valido rifiutato all'ingresso). Fixture: `tests/Filemaster.UnitTests/Wire/Fixtures/` (`captured/` 174 file scrubbati da
+  `dev` 8aec8bb, `derived/` 8 file, `README.md`, `INDEX.tsv`; il csproj dei test le copia accanto alla DLL). **Prova (io, sull'albero vero)**: restore + build `--no-incremental` 0 avvisi; **2400 unit** (net10,
+  net8, asset ns2.0) + 4 integration verdi; format x2 exit 0; 169 `.cs` senza CR/TAB/non-ASCII; pack 4+4 + `verify-packages.sh` ok; `grep -rIFl -f secret-literals.txt` sul repo: **nessun risultato**; `whsec_`/`saf_`
+  nelle fixture solo i due valori finti del README; nessun file ignorato da git in `Wire/` (205 file); il test di superficie pubblica di T4.1 e' rimasto verde senza modifiche (nessun tipo wire e' pubblico:
+  `WireShapeTests`). Conteggio: 1544 -> 2387 (+843 del subagent) -> 2400 (+13 miei, vedi sotto).
+  **Mutazioni** (subagent, su copia, net10, watchdog): 69 mutanti, 67 presi, W11 fermato dal compilatore e rifatto (W11b, preso), **W56 NON preso ed equivalente** (`JsonDocument` non smaltito: una perdita non e'
+  osservabile da un test). **W07b** (`Z` letta senza `AssumeUniversal`) e' preso solo perche' la macchina e' in CEST: **in UTC sarebbe equivalente** (CI Ubuntu non lo vedrebbe; lezione 32).
+  **Lacuna del Domain trovata dal wire e CHIUSA da me**: `ArxivarMetadata.From` prometteva "non lancia mai" ma `GetString` e `TryGetProperty` lanciano `InvalidOperationException` su un surrogato isolato
+  (`"a\ud800"`, JSON valido che il server conserva) in un valore o in un NOME di proprieta'. Ora le ricerche passano da `TryGetProperty`/`ReadString` privati che trattano "illeggibile" come "assente"; 2 test
+  nuovi (1 con asserzione esatta sui valori, 1 Theory da 12 casi sui nomi: contratto = non lancia, mai un docnumber diverso). Mutanti D1-D5 su copia: D1, D2, D5 presi subito; **D3 e D4 (ricerche di `arxivar`
+  e `docnumber` non protette) NON presi al primo giro** perche' il confronto di STJ procede carattere per carattere e parte dall'ULTIMA proprieta': serve un nome cattivo che venga DOPO quello cercato e che
+  inizi col surrogato -> 2 casi aggiunti, poi presi (lezione 35).
+  **Decisioni del subagent da riportare**: `sha256` deve essere 64 cifre hex minuscole; `size_bytes` non negativo; `next_cursor` presente e vuoto = errore; `deduplicated` obbligatorio solo nella risposta di un
+  upload; `metadata` non oggetto = errore, `null`/assente = `{}`; `has_content` ignorato anche col tipo sbagliato; enum assente o nuovo = `Unknown`, tipo sbagliato = errore; date lette con i due formati esatti del
+  server e `AssumeUniversal`, scritte sempre da `UtcDateTime` con la `Z` (`12:00+02:00` esce `...T10%3A00%3A00Z`, mai la forma solo-data); surrogato isolato in query/corpi/campi multipart/nome file =
+  `ArgumentException` col nome del parametro (`Uri.EscapeDataString` lo sostituirebbe in silenzio con U+FFFD); valori delle query as-is (vuoto parte, null no, nessun trim), ordine dei parametri stabile, solo nomi
+  canonici; radice nei corpi di spostamento = `{"folder_id":null}` esplicito; `Content-Range` rifiuta `*/n`, `a-b/*`, `ultimo >= totale`, overflow, cifre Unicode, e `DownloadHeaders.Read` lo pretende solo con 206
+  controllando `Content-Length == ultimo - primo + 1`; `IsHealthy` dipende dallo status HTTP, mai dal testo. **Il brief citava le fixture 80-82 per `created_from`: quelle giuste sono 87-89** (lezione 40).
+  **Per T4.3**: usare `Routes.*` (relativi, senza `/` iniziale); corpo JSON con `WireJson.ContentType`; PATCH con `new HttpMethod("PATCH")`; upload = `DocumentWire.UploadFields(request)` + parte file con
+  `ContentDispositionHeader.FilePart("file", request.FileName)` via `TryAddWithoutValidation("Content-Disposition", ...)`, file per ULTIMO; download = `DownloadHeaders.Read(downloadResponse).ToContent(stream, owner)`.
+  Un 503 di `/readyz` non JSON esce da `HealthWire` come `UnexpectedResponseException(503)`: la mappatura finale (es. `ServerErrorException`) la decide **T4.3b**.
+  **Non verificato**: net48 (solo compilato: ne' i test ne' `EscapeDataString` oltre 65.519 caratteri ne' `HttpContentHeaders` reale); mutazioni solo su net10 (non su net8/ns2.0); nessuna richiesta provata contro un
+  server vero (confrontate con i corpi e i percorsi che il server ha accettato nelle catture 21, 22, 28, 44, 54, 129, 133, 134, 136, 138); **limite di 16 KiB del `MultipartReader` del server sulle intestazioni di
+  parte**: un `FileName` molto lungo (percent-codificato) potrebbe superarlo e l'Application non limita `FileName`; **fixture derivate, non catturate** (contatti, categorie, documento senza contenuto, contatti su un
+  documento, buste webhook, `metadata` assente) da sostituire con le catture di T6.3; fixture di `dev` catturate su Azure SQL Edge: ricatturare su SQL Server 2022.
+- [ ] **T4.3a..T4.4** *(T4.2 e' fatto, voce sopra)* **T4.3a** adapter documenti -> **T4.3b** adapter cartelle/contatti/tenant/health -> **T4.4** root `Filemaster`
+  (almeno quattro lanci, ciascuno con i suoi punti di controllo). **Decisioni di T4.1 da scrivere nel brief, non rimandare a T6.1**: il corpo dell'upload e' in streaming senza buffering anche
+  su net48 (provabile solo su Windows CI: "non verificato in locale"); i download usano `ResponseHeadersRead`; il retry vale solo per i GET e solo **prima** di consegnare la risposta
+  al chiamante (mai su uno stream gia' restituito, mai su un 503 di `/readyz`, come promette il doc di `IFilemasterHealth`); il **test di architettura sulla superficie pubblica di Infrastructure**
+  (solo `FilemasterOptions`, `FilemasterRetryOptions`, `FilemasterHttp`) si scrive in T4.1, non dopo, altrimenti tre compiti possono far trapelare tipi pubblici.
+  **T4.2** *(soddisfatto)*: "fatto" = copie scrubbate in `tests/` + `grep` su `tests/` senza risultati per prefissi di chiave API, `whsec_`, password, slug dell'ente e hostname reali (le sorgenti in
+  `.scratch/spikes-e2e/` contengono segreti e restano fuori).
 - [x] **T5.1** `ci.yml`, **T5.2** `release.yml`, **T5.4** `dependabot.yml` *(fatti 2026-10-01 da subagent senza `dotnet` sul repo; **verificato da me**:
   actionlint `rhysd/actionlint@sha256:b1934ee5...` rc=0 su entrambi i workflow, i 6 SHA riletti con `git ls-remote` (checkout, setup-dotnet,
   softprops identici a Sharp-a-File), lettura integrale di `release.yml`/`ci.yml`/`dependabot.yml`. **Non verificato**: esecuzione reale su GitHub,

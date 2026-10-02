@@ -1,0 +1,4 @@
+POST /documents
+# auth: X-API-Key (scope write)
+# curl: -F
+# curl: file=@fixtures/perche.pdf;type=application/pdf;filename=perché è.pdf

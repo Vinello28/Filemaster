@@ -1,0 +1,2 @@
+GET /documents?folder_id=FATTURE
+# auth: X-API-Key (scope read)

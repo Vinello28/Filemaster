@@ -1,0 +1,2 @@
+GET /documents?metadata=%7B%22arxivar%22%3A%7B%22docnumber%22%3A12345%7D%7D
+# auth: X-API-Key (scope read)

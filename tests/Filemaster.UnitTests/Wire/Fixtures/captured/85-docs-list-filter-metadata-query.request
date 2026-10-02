@@ -1,0 +1,2 @@
+GET /documents?metadata_query=X
+# auth: X-API-Key (scope read)

@@ -1,0 +1,16 @@
+POST /documents
+# auth: X-API-Key (scope write)
+# curl: -F
+# curl: file=@fixtures/fattura.pdf;type=application/pdf;filename=fattura.pdf
+# curl: -F
+# curl: folder_id=FATTURE
+# curl: -F
+# curl: owner=maria
+# curl: -F
+# curl: tag=fattura
+# curl: -F
+# curl: sender=Acme Srl
+# curl: -F
+# curl: recipient=Beta Spa
+# curl: -F
+# curl: metadata={"arxivar":{"docnumber":12345,"categoria":"X"}}

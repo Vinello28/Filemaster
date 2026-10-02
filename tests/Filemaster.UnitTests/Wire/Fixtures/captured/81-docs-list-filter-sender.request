@@ -1,0 +1,2 @@
+GET /documents?sender=Acme%20Srl
+# auth: X-API-Key (scope read)

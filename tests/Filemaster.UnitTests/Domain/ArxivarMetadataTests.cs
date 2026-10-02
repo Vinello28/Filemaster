@@ -272,6 +272,43 @@ public sealed class ArxivarMetadataTests
     }
 
     [Fact]
+    public void From_with_an_isolated_surrogate_escape_in_a_value_leaves_that_field_null_and_keeps_the_rest()
+    {
+        // Il server conserva qualunque JSON valido per il suo parser, compreso "\ud800" (surrogato isolato): System.Text.Json lo legge,
+        // ma GetString lancia InvalidOperationException. La promessa "non lancia mai" vale anche qui: il campo illeggibile e' null.
+        var result = From("""{"arxivar":{"docnumber":1,"categoria":"a\ud800","oggetto":"ok","data_documento":"\ud800","anno":"2026"}}""");
+
+        Assert.Equal(
+            new ArxivarMetadata(1, null, "ok", null, null, null, null, "2026", null, null),
+            result);
+    }
+
+    [Theory]
+    [InlineData("""{"arxivar":{"docnumber":1,"x\ud800":2,"oggetto":"ok"}}""")]
+    [InlineData("""{"y\ud800":1,"arxivar":{"docnumber":1,"oggetto":"ok"}}""")]
+    [InlineData("""{"arxivar":{"docnumber":1,"oggetto":"ok"},"z\ud800":1}""")]
+    [InlineData("""{"arxivar":{"docnumber":1,"oggetto":"ok"},"\ud800\ud800":0}""")]
+    [InlineData("""{"arxivar":{"docnumber":1,"oggetto":"ok","\ud800\ud800":2}}""")]
+    [InlineData("""{"arxivar":{"docnumber":1,"oggett\ud800":2,"oggetto":"ok"}}""")]
+    [InlineData("""{"arxivar":{"\ud800":2,"docnumber":1,"oggetto":"ok"}}""")]
+    [InlineData("""{"arxivar":{"\ud800\ud800":2,"docnumber":1,"oggetto":"ok"}}""")]
+    [InlineData("""{"arxiva\ud800":0,"arxivar":{"docnumber":1,"oggetto":"ok"}}""")]
+    [InlineData("""{"\ud800\ud800":0,"arxivar":{"docnumber":1,"oggetto":"ok"}}""")]
+    [InlineData("""{"arxivar":{"docnumbe\ud800":0,"docnumber":1,"oggetto":"ok"}}""")]
+    [InlineData("""{"\ud800\ud800\ud800":0,"arxivar":{"\ud800\ud800\ud800\ud800":0,"docnumber":1,"oggetto":"ok"}}""")]
+    public void From_with_an_isolated_surrogate_escape_in_a_name_never_throws_and_never_invents_a_docnumber(string json)
+    {
+        // Anche un NOME con un surrogato isolato fa lanciare TryGetProperty: il confronto con il nome cercato procede carattere per
+        // carattere e decodifica l'escape solo se quanto lo precede coincide (e la ricerca parte dall'ultima proprieta'). Cosa si riesce
+        // ancora a leggere dipende dal parser: il contratto e' non lanciare e non inventare un docnumber.
+        var result = Record.Exception(() => From(json));
+        Assert.Null(result);
+
+        var metadata = From(json);
+        Assert.True(metadata is null || metadata.Docnumber == 1);
+    }
+
+    [Fact]
     public void From_results_are_equal_by_value_unlike_Document()
     {
         // Solo scalari: due letture dello stesso testo, da JsonDocument diversi, danno record uguali.

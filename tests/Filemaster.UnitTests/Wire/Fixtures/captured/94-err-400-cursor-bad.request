@@ -1,0 +1,2 @@
+GET /documents?cursor=%21%21%21
+# auth: X-API-Key (scope read)
