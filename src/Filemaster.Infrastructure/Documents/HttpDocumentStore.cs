@@ -74,6 +74,14 @@ internal sealed class HttpDocumentStore : IDocumentStore
             {
                 JsonCalls.AcceptJson(message);
                 message.Content = UploadBody(fields, fileDisposition, fileContentType, source);
+
+                // Lunghezza ignota (stream non riposizionabile): chunked esplicito. Su .NET e' gia' il default; HttpClientHandler di
+                // .NET Framework invece, senza TransferEncodingChunked, carica l'intero corpo in memoria per calcolarne il
+                // Content-Length (LoadIntoBufferAsync), misurato sulla CI net48.
+                if (message.Content.Headers.ContentLength is null)
+                {
+                    message.Headers.TransferEncodingChunked = true;
+                }
             },
         };
         var response = await _transport.SendUploadAsync(transportRequest, cancellationToken).ConfigureAwait(false);

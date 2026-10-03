@@ -17,9 +17,10 @@ namespace Filemaster.Infrastructure;
 /// (errore di rete, mai ritentato).
 /// </para>
 /// <para>
-/// <b>.NET Framework (net48).</b> <c>HttpClientHandler</c> puo' bufferizzare comunque il corpo della richiesta in memoria
-/// (<c>AllowWriteStreamBuffering</c>): non si risolve qui ma dove si crea il gestore. <b>Non verificato in locale</b> (si prova su
-/// Windows CI, T6.1).
+/// <b>.NET Framework (net48).</b> Senza <c>TransferEncodingChunked</c> sulla richiesta, <c>HttpClientHandler</c> carica in memoria
+/// un corpo di lunghezza ignota per calcolarne il <c>Content-Length</c>: per questo <see cref="HttpDocumentStore.UploadAsync"/>
+/// chiede il <c>chunked</c> esplicito quando la lunghezza manca. La memoria di un upload grande si misura su Windows CI
+/// (<c>LoopbackMemoryTests</c>).
 /// </para>
 /// <para>
 /// Lo si scrive una volta sola: un caricamento non si ritenta mai, e lo stream dell'utente non si riavvolge.

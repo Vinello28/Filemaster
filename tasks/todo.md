@@ -609,6 +609,12 @@ Ordine (in serie per tutto cio' che invoca `dotnet`, lezione 14; i documenti pos
   lancia `UriFormatException`. Il codice era giusto (rifiuta prima con `ArgumentException`, gli 8 test sui surrogati verdi su net48): corretto il test con `#if NETFRAMEWORK` (rinominato
   `The_framework_mishandles_a_lone_surrogate_which_is_why_it_is_refused_first`), doc di `PercentEncoding` e "Non verificato" di `api-contract.md`. Verificato in locale: build con
   `IncludeNet48=true` 0 avvisi, 2737/2737 su net8 e net10, format x2 0, ASCII/LF. **Non verificato**: il verde su net48 (nessun runtime net48 sul Mac) -> rilanciare la CI.
+- [x] **R8 = seconda CI net48 rossa** *(2026-10-03)* 1/75 negli IntegrationTests: `A_non_seekable_stream_is_sent_chunked_without_Content_Length`. Causa: `HttpClientHandler` di
+  .NET Framework, con corpo di lunghezza ignota e senza `TransferEncodingChunked`, carica tutto il corpo in memoria (`LoadIntoBufferAsync`) e manda `Content-Length`: difetto vero
+  (upload grandi non riposizionabili in RAM), non del test. Fix in `HttpDocumentStore.UploadAsync`: `TransferEncodingChunked = true` se `Content.Headers.ContentLength` e' null
+  (su .NET e' gia' il default); remark di `UploadStreamContent` corretto. Verificato in locale: build `--no-incremental` e `IncludeNet48=true` 0 avvisi, `dotnet test` 5628 exit 0,
+  test di memoria net10 2/2, format x2 0, ASCII/LF. **Non verificato**: net48 (nessun runtime sul Mac) -> rilanciare la CI, compreso il passo "Test di memoria" (mai arrivato
+  a girare: il suo caso non riposizionabile era colpito dallo stesso difetto).
 
 ## Review
 

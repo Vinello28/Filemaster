@@ -179,6 +179,13 @@ progetto emerse in pianificazione.
     U+FFFD su tutti i TFM: su net48 `Uri.EscapeDataString` con un surrogato isolato lancia `UriFormatException` ("There is an invalid sequence in the string"). Regola: ogni test che
     asserisce il comportamento del FRAMEWORK (non il nostro) e che non e' stato visto girare su net48 va scritto con `#if NETFRAMEWORK`/`#else` oppure asserire solo cio' che vale ovunque;
     prima di consegnare, `grep` delle note "misurato su .NET 10" nei test e controllo di quali girano anche su net48.
+56. **Un comportamento del gestore HTTP si nomina col suo vero interruttore, non con quello che sembra (2026-10-03, seconda CI net48).**
+    `UploadStreamContent` diceva "net48 potrebbe bufferizzare (`AllowWriteStreamBuffering`)": il vero ramo e' `HttpClientHandler` di .NET Framework
+    che, con lunghezza ignota e `TransferEncodingChunked` non impostato, chiama `LoadIntoBufferAsync` e manda `Content-Length` (il test
+    `A_non_seekable_stream_is_sent_chunked_without_Content_Length` rosso solo su net48). Su .NET il chunked e' il default, quindi il test
+    passava ovunque in locale e non poteva prendere il difetto. Regola: per ogni comportamento del filo lasciato al "default del gestore"
+    lo si chiede ESPLICITAMENTE (qui `message.Headers.TransferEncodingChunked = true` se `Content.Headers.ContentLength` e' null), cosi'
+    non dipende dal runtime; e una nota "non verificato su net48" resta un debito aperto, non una riga di documentazione.
 
 ## Esiti degli spike
 
