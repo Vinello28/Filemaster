@@ -605,6 +605,10 @@ Ordine (in serie per tutto cio' che invoca `dotnet`, lezione 14; i documenti pos
   `architecture.md`/`publishing.md` aggiornati (pack-smoke e live esistono, nomi dei job). Testo originale: `docs/api-contract.md` allineato a T4.3b/T4.4/T6 (503 non-sonda di `/readyz`, sonde senza chiave, composizione, esiti e2e).
 - [x] **R6 = Fase 8 (parte locale)** *(2026-10-03)* T8.1 `eng/docker-replay.sh` da copia pulita in `sdk:10.0` (arm64): 10/10 passi, 2737 unit per TFM; T8.2 `verify-packages.sh` 0;
   T8.3 pack-smoke 0; T8.4 actionlint/shellcheck 0; T8.5 suite live verde (R3). Restano: prima CI su GitHub (job Windows net48 mai visto), `e2e.yml` su Ubuntu/SQL 2022, T8.6. Testo originale:: T8.1 replay `sdk:10.0`, T8.2 nupkg, T8.3 pack-smoke, T8.4 actionlint, T8.5 run live; T8.6 resta all'utente (tag rc, commit/push).
+- [x] **R7 = prima CI net48 rossa** *(2026-10-03)* 2728/2729: `PercentEncodingTests` autoverificava che `Uri.EscapeDataString` sostituisse un surrogato isolato con U+FFFD (vero su .NET 8/10); su net48
+  lancia `UriFormatException`. Il codice era giusto (rifiuta prima con `ArgumentException`, gli 8 test sui surrogati verdi su net48): corretto il test con `#if NETFRAMEWORK` (rinominato
+  `The_framework_mishandles_a_lone_surrogate_which_is_why_it_is_refused_first`), doc di `PercentEncoding` e "Non verificato" di `api-contract.md`. Verificato in locale: build con
+  `IncludeNet48=true` 0 avvisi, 2737/2737 su net8 e net10, format x2 0, ASCII/LF. **Non verificato**: il verde su net48 (nessun runtime net48 sul Mac) -> rilanciare la CI.
 
 ## Review
 

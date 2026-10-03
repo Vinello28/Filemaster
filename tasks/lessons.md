@@ -175,6 +175,10 @@ progetto emerse in pianificazione.
     >= 8 MiB per le catture da 5 MiB): lo strumento che dipende dalla configurazione la controlla e si rifiuta con il comando giusto, invece di produrre catture "vere" ma sbagliate.
     Una fixture derivata minima non e' l'oracolo dei NOMI dei campi (il dettaglio contatto derivato aveva 4 campi): per il confronto si usa l'oggetto piu' completo. Una suite che passa al
     primo colpo si prova dai log del server (richieste e status visti), non dal riepilogo dei test.
+55. **Un'autoverifica del framework misurata su un solo runtime e' un'ipotesi sugli altri (2026-10-03, prima CI net48).** La 37 diceva "misurato su .NET 10" e il test asseriva
+    U+FFFD su tutti i TFM: su net48 `Uri.EscapeDataString` con un surrogato isolato lancia `UriFormatException` ("There is an invalid sequence in the string"). Regola: ogni test che
+    asserisce il comportamento del FRAMEWORK (non il nostro) e che non e' stato visto girare su net48 va scritto con `#if NETFRAMEWORK`/`#else` oppure asserire solo cio' che vale ovunque;
+    prima di consegnare, `grep` delle note "misurato su .NET 10" nei test e controllo di quali girano anche su net48.
 
 ## Esiti degli spike
 

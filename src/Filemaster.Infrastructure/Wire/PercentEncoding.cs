@@ -5,7 +5,7 @@ namespace Filemaster.Infrastructure;
 /// <c>-._~</c>, i caratteri non ASCII come UTF-8 (la e accentata diventa <c>%C3%A9</c>), uno spazio <c>%20</c> e mai <c>+</c>). Mai
 /// <c>HttpUtility</c> (non esiste su netstandard2.0). Due difese attorno alla chiamata del framework:
 /// <list type="bullet">
-/// <item><description>Un surrogato isolato non e' testo UTF-16 valido: <c>EscapeDataString</c> lo sostituirebbe in silenzio con U+FFFD (misurato su .NET 10), cioe' il server riceverebbe un valore diverso da quello dell'utente. Si rifiuta con <see cref="ArgumentException"/>, prima di toccare la rete.</description></item>
+/// <item><description>Un surrogato isolato non e' testo UTF-16 valido: <c>EscapeDataString</c> lo sostituirebbe in silenzio con U+FFFD (misurato su .NET 10), cioe' il server riceverebbe un valore diverso da quello dell'utente; su .NET Framework lancia invece <c>UriFormatException</c>, senza il nome del parametro (misurato sulla CI net48). Si rifiuta con <see cref="ArgumentException"/>, prima di toccare la rete.</description></item>
 /// <item><description>Su .NET Framework una stringa molto lunga (oltre 65.519 caratteri) fa lanciare <c>UriFormatException</c> a <c>EscapeDataString</c> (non verificato in locale: solo net48 su Windows). Il valore si codifica a pezzi di 16.384 caratteri, senza mai spezzare una coppia surrogata, e il risultato e' identico.</description></item>
 /// </list>
 /// </summary>

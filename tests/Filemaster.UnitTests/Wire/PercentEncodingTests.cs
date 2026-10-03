@@ -5,7 +5,7 @@ namespace Filemaster.UnitTests.Wire;
 /// <summary>
 /// La codifica percent dei valori della query string, con vettori scritti A MANO (non ricalcolati con <c>Uri.EscapeDataString</c>): spazio come
 /// <c>%20</c> e mai <c>+</c>, <c>&amp; = + % /</c> codificati, non ASCII e emoji come byte UTF-8 (coppie surrogate comprese), esadecimale
-/// maiuscolo. Un surrogato isolato e' rifiutato (il framework lo sostituirebbe in silenzio con U+FFFD) e una stringa molto lunga si codifica a
+/// maiuscolo. Un surrogato isolato e' rifiutato (.NET 8+ lo sostituirebbe in silenzio con U+FFFD, .NET Framework lancerebbe UriFormatException) e una stringa molto lunga si codifica a
 /// pezzi senza spezzare una coppia surrogata.
 /// </summary>
 public sealed class PercentEncodingTests
@@ -98,13 +98,18 @@ public sealed class PercentEncodingTests
     }
 
     [Fact]
-    public void The_framework_really_replaces_a_lone_surrogate_in_silence_which_is_why_it_is_refused_first()
+    public void The_framework_mishandles_a_lone_surrogate_which_is_why_it_is_refused_first()
     {
-        // Autoverifica (misurata su .NET 10): senza il controllo il valore partirebbe diverso da quello dell'utente.
-        var framework = Uri.EscapeDataString("a" + new string((char)0xD800, 1) + "b");
+        var value = "a" + new string((char)0xD800, 1) + "b";
 
-        Assert.Equal("a%EF%BF%BDb", framework);
-        Assert.Throws<ArgumentException>(() => Encode("a" + new string((char)0xD800, 1) + "b"));
+#if NETFRAMEWORK
+        // Autoverifica (misurata sul job Windows net48 della CI): senza il controllo uscirebbe una UriFormatException senza il nome del parametro.
+        Assert.Throws<UriFormatException>(() => Uri.EscapeDataString(value));
+#else
+        // Autoverifica (misurata su .NET 10): senza il controllo il valore partirebbe diverso da quello dell'utente.
+        Assert.Equal("a%EF%BF%BDb", Uri.EscapeDataString(value));
+#endif
+        Assert.Throws<ArgumentException>(() => Encode(value));
     }
 
     [Fact]

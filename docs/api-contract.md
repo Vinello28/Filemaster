@@ -322,7 +322,9 @@ deduplicare si usa `delivery_id` del corpo verificato, non l'intestazione (non f
 - Le catture e la suite live sono state eseguite su **Azure SQL Edge** (arm64); SQL Server 2022 su Ubuntu e' il percorso di `e2e.yml`, non
   ancora eseguito su GitHub.
 - **net48 eseguito**: compilato ovunque, ma eseguito solo dal job Windows della CI (test unit, memoria 200 MB con il buffering di
-  `HttpClientHandler`, pack-smoke net48 con i floor 8.0.x), mai osservato verde. Restano da vedere li': `Uri.Query` vuota (mutante M30),
+  `HttpClientHandler`, pack-smoke net48 con i floor 8.0.x). Prima corsa dei test unit (2026-10-03): 2728/2729 verdi; l'unico rosso era
+  un'autoverifica scritta su .NET 10 (`EscapeDataString` su un surrogato isolato lancia `UriFormatException` su net48 invece di dare U+FFFD),
+  corretta nel test e non ancora rivista verde. Restano da leggere nel log di quella corsa: `Uri.Query` vuota (mutante M30),
   `EscapeDataString` oltre 65.519 caratteri, STJ 8.0.5 a runtime.
 - Le buste **webhook** restano derivate dal codice (catturarle richiede un ricevitore e l'amministrazione dei webhook, fase B).
 - Il limite di 16 KiB sulle intestazioni di parte con un `FileName` molto lungo; nessun 429 reale; confronto a tempo costante (non
