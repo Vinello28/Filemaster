@@ -139,17 +139,15 @@ jobs:
             done
           done
 
-      # Upload da 200 MB contro il server loopback: su net48 HttpClient bufferizza il corpo della richiesta, il test
-      # misura il consumo di memoria. Gira solo su net48, il TFM in cui il buffering e' un rischio (su Linux lo
-      # esegue gia' il passo di test generale).
-      # TODO(T6.1): il test non esiste ancora (lo scrive T6.1 in tests/Filemaster.IntegrationTests, marcato con
-      # [Trait("Category", "Memory")]). Con zero test selezionati MTP esce con 8: --ignore-exit-code 8 tiene verde il
-      # workflow nel frattempo. Quando il test c'e', togliere --ignore-exit-code 8 e aggiungere --minimum-expected-tests 1,
-      # cosi' un trait scritto male non passa in silenzio.
+      # Upload da 200 MB generati al volo contro il server di loopback (LoopbackMemoryTests, [Trait("Category", "Memory")]):
+      # su net48 HttpClientHandler potrebbe bufferizzare il corpo della richiesta, e il test fallisce se il picco di memoria
+      # gestita cresce di 64 MB o piu'. Qui gira solo su net48, il TFM in cui il buffering e' un rischio: il passo di test
+      # generale di questo job lo esclude, su Linux lo esegue gia' il passo di test generale (net8/net10).
+      # --minimum-expected-tests 1: un trait scritto male (zero test selezionati) fa fallire il passo invece di passare in silenzio.
       - name: Test di memoria (upload da 200 MB, net48)
         run: >-
           dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net48 --no-build
-          --filter-trait "Category=Memory" --ignore-exit-code 8
+          --filter-trait "Category=Memory" --minimum-expected-tests 1
 
   # Installa i .nupkg appena impacchettati da un feed locale in una console usa-e-getta, come farebbe un cliente
   # (net8/net10 ovunque, net48 solo su Windows: lo decide lo script).
@@ -181,8 +179,7 @@ jobs:
           name: pacchetti
           path: artifacts
 
-      # TODO(T5.5): eng/pack-smoke/run.sh <cartella-pacchetti> <versione> non esiste ancora. Il percorso della cartella
-      # e' relativo alla radice del repo: lo script lo rende assoluto.
+      # Il percorso della cartella e' relativo alla radice del repo: lo script lo rende assoluto.
       - name: Pack smoke
         run: bash eng/pack-smoke/run.sh artifacts "$CI_VERSION"
 

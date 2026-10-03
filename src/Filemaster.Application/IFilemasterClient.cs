@@ -9,8 +9,9 @@ namespace Filemaster.Application;
 /// <para>
 /// L'implementazione sta in Infrastructure e si crea con la composizione del pacchetto <c>Filemaster</c>
 /// (<c>AddFilemaster</c> o la factory per chi non usa l'iniezione delle dipendenze). Questa interfaccia non e'
-/// <see cref="IDisposable"/> di proposito: il client riusa un <c>HttpClient</c> che dura quanto il processo, e non possiede
-/// niente che chi lo usa debba rilasciare.
+/// <see cref="IDisposable"/> di proposito: chi riceve il client (per iniezione o come dipendenza) non deve rilasciarlo.
+/// Lo rilascia solo chi l'ha creato: il contenitore DI con <c>AddFilemaster</c>, oppure chi ha chiamato la factory, che
+/// restituisce un <c>FilemasterClient</c> <see cref="IDisposable"/> da tenere per tutta la vita dell'applicazione.
 /// </para>
 /// <para>
 /// <b>Aggiungere un membro a un'interfaccia e' una modifica incompatibile</b> per chi la implementa (su netstandard2.0 non

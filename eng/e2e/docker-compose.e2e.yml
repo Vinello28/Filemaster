@@ -1,0 +1,71 @@
+# Filemaster e2e: Sharp-a-File reale + SQL Server 2022, tutto effimero.
+# Default = configurazione CI (Ubuntu x86_64, SQL Server 2022 nativo). Su Apple Silicon aggiungere
+# docker-compose.e2e.mac.yml (run-e2e.sh --mac).
+#
+# Non usare a mano: lo pilota run-e2e.sh (migrate -> bootstrap-admin -> storage-password -> seed -> run).
+# Il progetto compose si chiama "filemaster-e2e" (override: E2E_PROJECT): volumi, rete e container hanno quel
+# prefisso, quindi down.sh puo' rimuovere solo cio' che appartiene a questo harness.
+name: filemaster-e2e
+
+x-app-image: &app-image
+  image: ${E2E_APP_IMAGE:-sharpafile-e2e:local}
+  pull_policy: never   # l'immagine e' costruita da run-e2e.sh a partire dal Dockerfile del clone di Sharp-a-File
+
+x-db: &db-connection
+  SHARPAFILE_DB_CONNECTION_STRING: "Server=mssql,1433;Database=sharpafile;User Id=sa;Password=${MSSQL_SA_PASSWORD:?run-e2e.sh genera MSSQL_SA_PASSWORD in .e2e/state/compose.env};TrustServerCertificate=True"
+
+services:
+  mssql:
+    # Stesso digest del compose del server (deploy/docker-compose.yml): CI riproducibile. Override: E2E_MSSQL_IMAGE.
+    image: ${E2E_MSSQL_IMAGE:-mcr.microsoft.com/mssql/server:2022-latest@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090}
+    environment:
+      # La licenza la accetta chi lancia lo script (come nel compose del server): MSSQL_ACCEPT_EULA=Y nell'ambiente.
+      ACCEPT_EULA: "${MSSQL_ACCEPT_EULA:?imposta MSSQL_ACCEPT_EULA=Y dopo aver letto la licenza di SQL Server}"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?run-e2e.sh genera MSSQL_SA_PASSWORD in .e2e/state/compose.env}"
+      MSSQL_PID: Developer
+    # Nessuna porta pubblicata: il database e' raggiungibile solo dalla rete del progetto.
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -b -Q 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+
+  # One-shot: migrate, bootstrap-admin (stessa immagine, comandi diversi).
+  migrate:
+    <<: *app-image
+    build:
+      context: ${E2E_SRC_DIR:-.}
+      dockerfile: Dockerfile
+      args:
+        COMMIT: "${E2E_COMMIT:-none}"
+    command: ["migrate"]
+    environment:
+      <<: *db-connection
+    volumes:
+      - storage:/data
+    depends_on:
+      mssql:
+        condition: service_healthy
+
+  app:
+    <<: *app-image
+    command: ["run"]
+    environment:
+      <<: *db-connection
+      SHARPAFILE_SESSION_SECRET: "${SHARPAFILE_SESSION_SECRET:?run-e2e.sh genera SHARPAFILE_SESSION_SECRET in .e2e/state/compose.env}"
+      SHARPAFILE_STORAGE_MASTER_KEY: "${SHARPAFILE_STORAGE_MASTER_KEY:?run-e2e.sh genera SHARPAFILE_STORAGE_MASTER_KEY in .e2e/state/compose.env}"
+      SHARPAFILE_ENV: dev
+      # Limite di upload basso (default del server: 500 MiB) perche' la suite live possa provare i due 413 con pochi MiB:
+      # oltre il limite dell'archivio ("contenuto troppo grande") e oltre quello di Kestrel (limite + 1 MiB di margine).
+      SHARPAFILE_MAX_UPLOAD_SIZE_BYTES: "${E2E_MAX_UPLOAD_BYTES:-4194304}"
+    ports:
+      - "127.0.0.1:${E2E_PORT:-18080}:8080"
+    volumes:
+      - storage:/data
+    depends_on:
+      mssql:
+        condition: service_healthy
+
+volumes:
+  storage:

@@ -49,6 +49,15 @@ le producono: finche' non succede sono "derivate, non catturate" e i test che le
 | `contact-categories.json` | elenco non paginato delle categorie | `ContactCategoryDto` |
 | `webhook-document-uploaded.json`, `webhook-document-deleted.json`, `webhook-document-integrity-failed.json` | buste webhook `{event, delivery_id, occurred_at, payload}` (il payload non omette i null e usa `filename`) | `WebhookDelivery`, `ActivityRecorder` (letti in T3.3) |
 
+### Confronto con le catture vere (T6.3, 2026-10-03)
+
+Le catture `captured/301-304` (pagina di contatti, dettaglio di un contatto, categorie, documento senza contenuto collegato a tre contatti) vengono
+dai dati seminati da `eng/e2e/seed.sh` sullo stesso commit `dev`, su Azure SQL Edge; le email sono scrubbate come sopra. Le fixture derivate restano
+l'oracolo dei test di dettaglio (hanno piu' campi valorizzati), ma `CapturedContactsTests` controlla che i lettori leggano i corpi veri e che
+**ogni nome di campo mandato dal server esista nella fixture derivata** (per il dettaglio di un contatto l'oracolo e' il contatto completo della
+pagina derivata). Esito: nessuna differenza di forma. Fatto nuovo: le API mandano il non ASCII come UTF-8 grezzo (`Citt\xc3\xa0`), non come escape.
+**Restano derivate e mai confrontate** le tre buste webhook: per catturarle serve un ricevitore e l'amministrazione dei webhook (Fase B).
+
 ## Come si usano
 
 - `WireFixtures` (in `tests/Filemaster.UnitTests/Wire/WireTestSupport.cs`) legge i file; `Variants` ne deriva una variante togliendo o cambiando UNA

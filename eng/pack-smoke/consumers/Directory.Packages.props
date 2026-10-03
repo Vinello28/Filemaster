@@ -1,0 +1,4 @@
+<Project>
+  <!-- Confine voluto e vuoto: niente gestione centrale delle versioni (CPM). Un cliente scrive la versione nel suo
+       PackageReference; con il Directory.Packages.props del repo quel Version darebbe NU1008. -->
+</Project>

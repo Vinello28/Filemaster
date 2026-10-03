@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Consumatore "moderno" dei pacchetti Filemaster (net8.0 e net10.0): un'applicazione console come la scriverebbe un cliente,
+    con Nullable attivo. Usa la registrazione DI (services.AddFilemaster) e la factory contro il server finto, e controlla che
+    gli assembly caricati vengano da lib/net8.0 o lib/net10.0. Lo costruisce e lo esegue eng/pack-smoke/run.sh, in una copia
+    fuori dal repo: la versione arriva da -p:FilemasterVersion=<versione>.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PackSmoke</RootNamespace>
+    <!-- Ogni avviso e' un errore (es. NU1603/NU1701: versione o TFM risolti per approssimazione), tranne le vulnerabilita' NuGet:
+         le segnala il job CI dedicato, come per i progetti del repo. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+    <!-- net8.0 esce dal supporto il 10/11/2026: NETSDK1138 non deve rompere lo smoke. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Range esatto: deve risolversi proprio la versione appena impacchettata, mai un'altra. -->
+    <PackageReference Include="Filemaster" Version="[$(FilemasterVersion)]" />
+    <Compile Include="../Shared/*.cs" />
+  </ItemGroup>
+
+  <Target Name="RequireFilemasterVersion" BeforeTargets="Restore;CollectPackageReferences" Condition="'$(FilemasterVersion)' == ''">
+    <Error Text="Manca la versione dei pacchetti: costruire con -p:FilemasterVersion=&lt;versione&gt; (lo fa eng/pack-smoke/run.sh)." />
+  </Target>
+</Project>

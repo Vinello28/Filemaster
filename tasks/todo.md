@@ -393,19 +393,98 @@ pinnate per SHA completo + commento col tag: checkout/setup-dotnet/softprops cop
   server vero (confrontate con i corpi e i percorsi che il server ha accettato nelle catture 21, 22, 28, 44, 54, 129, 133, 134, 136, 138); **limite di 16 KiB del `MultipartReader` del server sulle intestazioni di
   parte**: un `FileName` molto lungo (percent-codificato) potrebbe superarlo e l'Application non limita `FileName`; **fixture derivate, non catturate** (contatti, categorie, documento senza contenuto, contatti su un
   documento, buste webhook, `metadata` assente) da sostituire con le catture di T6.3; fixture di `dev` catturate su Azure SQL Edge: ricatturare su SQL Server 2022.
-- [ ] **T4.3a..T4.4** *(T4.2 e' fatto, voce sopra)* **T4.3a** adapter documenti -> **T4.3b** adapter cartelle/contatti/tenant/health -> **T4.4** root `Filemaster`
-  (almeno quattro lanci, ciascuno con i suoi punti di controllo). **Decisioni di T4.1 da scrivere nel brief, non rimandare a T6.1**: il corpo dell'upload e' in streaming senza buffering anche
-  su net48 (provabile solo su Windows CI: "non verificato in locale"); i download usano `ResponseHeadersRead`; il retry vale solo per i GET e solo **prima** di consegnare la risposta
-  al chiamante (mai su uno stream gia' restituito, mai su un 503 di `/readyz`, come promette il doc di `IFilemasterHealth`); il **test di architettura sulla superficie pubblica di Infrastructure**
-  (solo `FilemasterOptions`, `FilemasterRetryOptions`, `FilemasterHttp`) si scrive in T4.1, non dopo, altrimenti tre compiti possono far trapelare tipi pubblici.
-  **T4.2** *(soddisfatto)*: "fatto" = copie scrubbate in `tests/` + `grep` su `tests/` senza risultati per prefissi di chiave API, `whsec_`, password, slug dell'ente e hostname reali (le sorgenti in
-  `.scratch/spikes-e2e/` contengono segreti e restano fuori).
+- [x] **T4.3a** *(fatto 2026-10-02, subagent)* Adapter HTTP dei documenti, tutto internal in `src/Filemaster.Infrastructure/Documents/`: `HttpDocumentStore` (i 10 metodi di
+  `IDocumentStore` su `FilemasterTransport` + livello wire) e `UploadStreamContent` (parte file del multipart: scrive lo stream dell'utente dalla posizione corrente, a pezzi da 80 KiB,
+  senza bufferizzarlo e **senza chiuderlo**). Test in `tests/Filemaster.UnitTests/Infrastructure/Documents/` (5 file: supporto con parser multipart indipendente e fixture di download dalle
+  `.headers` catturate; test JSON, upload, download, argomenti/annullamento). **Prova (sull'albero vero)**: restore + build `--no-incremental` 0 avvisi; `dotnet test -c Release --no-build`
+  **5050** (erano 4808: +117 unit per TFM, 2521 su net10 e su net8, + integration); asset ns2.0 2521/2521; format x2 exit 0; pack 4+4 + `verify-packages.sh` ok; 176 `.cs` senza CR/TAB/non-ASCII;
+  test di superficie pubblica di Infrastructure verde senza modifiche. **Mutazioni** (38, su copia `mutroot`, net10, watchdog 240 s): run 1 = 36 presi, **M10** (senza intervallo accettato ogni 2xx) e
+  **M29** (upload con `SendBufferedAsync`, cioe' `RequestTimeout` al posto di `TransferTimeout`) NON presi -> 5 test nuovi (2xx diversi con e senza intervallo; tempo dell'upload); run 2 = **38/38 presi**,
+  nessuno fermato dal compilatore, nessuno stallo. Coperti: ordine delle parti e file per ultimo, `Range` (assente/sbagliato/ignorato), PATCH, metodi di delete/verify, percorsi, stream utente chiuso
+  (override di Dispose, `StreamContent`), dispose della risposta su intestazioni illeggibili, status attesi, validazione sincrona vs nel Task, `Accept`/`Content-Type`, tipo del file inventato, lunghezza
+  (mai nota, intera, negativa), riavvolgimento, copia in un solo pezzo, token non inoltrato (get/upload/download), campi non UTF-8, `multipart/mixed`, filtri e cartella persi.
+  **Decisioni da riportare**: (1) **eccezioni di argomento dentro il Task** (metodi `async`), sempre prima di qualunque richiesta, coerente con T3.2 (eager solo `EnumerateAsync`); (2) upload: lunghezza dichiarata
+  (`Length - Position`, minimo 0, fotografata alla creazione del messaggio) solo se lo stream e' `CanSeek`, altrimenti `chunked`; mai letto per misurarlo; (3) parte file senza `Content-Type` se
+  `UploadDocumentRequest.ContentType` e' null (il server riconosce il tipo); campi di testo UTF-8 grezzo senza `Content-Type`; `MultipartContent("form-data")` con intestazioni delle parti via
+  `TryAddWithoutValidation` (non `MultipartFormDataContent`, che riscrive `Content-Disposition`); (4) `FileName` con surrogato isolato -> `ArgumentException` con `ParamName` `FileName` (non `fileName` di
+  `ContentDispositionHeader`); (5) status attesi: JSON = ogni 2xx; contenuto/anteprima senza intervallo **solo 200**, con intervallo 200 o 206; un 206 non chiesto, un 204 o un 416 -> `UnexpectedResponseException`
+  con lo status vero (il 416 passa da `ProblemMapper`, gia' allineato al doc della porta); (6) `DocumentContent.owner` = null: il `DownloadStream` possiede gia' la risposta HTTP (smaltire il contenuto la
+  rilascia, provato con un contatore); se `DownloadHeaders.Read` lancia si smaltisce lo stream prima di rilanciare; (7) `Accept: application/json` su tutte le chiamate JSON e sull'upload, nessun `Accept`
+  sui download; verify singola = `POST` senza corpo. **Contro il server @8aec8bb** (`DocumentEndpoints.cs`): metodi/percorsi/status confermati (201 upload, 204 delete/move, 200 il resto, contenuto e anteprima
+  con `enableRangeProcessing`). Le catture del brief 21, 22, 28, 44 sono di **cartelle** (T4.3b), non di documenti; per i documenti valgono 47-54, 70-89, 98, 108-122, 126, 129, 133, 134, 136, 138 (lezione 40).
+  Nessuna cattura di `DELETE /documents/{id}` ne' dei corpi dei download (solo intestazioni): i corpi dei test di download sono sintetici.
+  **Obblighi per T4.3b/T4.4**: stesso schema (`async` + validazione nel Task, `Accept` JSON, `IsExpectedStatus` esplicito dove serve, 200|503 per `/readyz`); T4.4 costruisce `HttpDocumentStore(transport)` e
+  l'`HttpClient` con `Timeout` infinito, `AllowAutoRedirect=false`, niente decompressione; sul gestore net48 valutare `AllowWriteStreamBuffering`.
+  **Non verificato**: net48 (solo compilato: buffering dell'upload di `HttpClientHandler`, serializzazione del multipart col gestore vero); nessuna richiesta contro un server vero (il multipart e' confrontato
+  con un parser scritto nei test e con i valori della cattura 47, non con il `MultipartReader` di ASP.NET); mutazioni solo su net10; `CreateContentReadStreamAsync` di `UploadStreamContent` resta quello della
+  base (bufferizza) ma nessun gestore lo usa per inviare (usano `SerializeToStreamAsync`).
+- [x] **T4.3b** *(fatto 2026-10-02, subagent)* Adapter HTTP di cartelle, contatti, tenant e health, tutti `internal sealed` su `FilemasterTransport` + livello wire:
+  `Folders/HttpFolderCatalog` (`IFolderCatalog`), `Contacts/HttpContactDirectory` (`IContactDirectory`), `Tenants/HttpTenantInfo` (`ITenantInfo`), `Health/HttpFilemasterHealth` (`IFilemasterHealth`)
+  in `src/Filemaster.Infrastructure/`, piu' `Transport/JsonCalls.cs` (invio JSON bufferizzato con `Accept: application/json` e corpo `WireJson.ContentType`) e la proprieta' internal
+  `TransportRequest.OmitApiKey` (il trasporto non mette la chiave su nessun tentativo; default false). Test in `tests/Filemaster.UnitTests/Infrastructure/Resources/` (`ResourceRig` sopra lo `StoreRig`
+  di T4.3a + 5 file: cartelle 21, contatti 11, tenant 5, health 18, comuni 13 metodi di test) + 2 test di `OmitApiKey` in `TransportCommonTests`.
+  **Prova (sull'albero vero)**: restore + build `--no-incremental` 0 avvisi; `dotnet test -c Release --no-build` **5362** (erano 5050: +156 unit per TFM, 2677 su net10 e su net8, + integration);
+  asset ns2.0 2677/2677 (poi restore/build normali rifatti); format x2 exit 0; pack 4+4 + `verify-packages.sh` ok; 187 `.cs` senza CR/TAB/non-ASCII.
+  **Mutazioni** (37, su copia `mutroot`, net10, watchdog): run 1 = 35/35 presi + **B10** fermato dal compilatore (CS0121, `Map(int, null, ...)` ambiguo) -> rifatto come **B10b** (`(byte[]?)null`);
+  run 2 = B10b preso. **Nessun sopravvissuto, nessuno stallo** (B15, JSON con `SendUploadAsync`, preso in 81 s per i Task appesi fino a `Waiting.Within`). Coperti: chiave sulle sonde (e sul retry),
+  `OmitApiKey` ignorato/invertito, healthz che accetta ogni 2xx, 503 di readyz non atteso, 503 non-sonda lasciato `UnexpectedResponseException`, request id e corpo persi nel 503 non-sonda,
+  `Accept`/`Content-Type`, modalita' del trasporto (upload al posto di bufferizzato), corpo vuoto inventato, PATCH/POST/DELETE scambiati, `ParamName` del wire al posto di quello della porta,
+  ordine null/codice nell'update, padre ignorato, update senza codice nel percorso, delete non async, pagina/filtri persi, percorsi e metodi di contatti/tenant, dettaglio letto come pagina.
+  **Decisioni da riportare**: (1) **le sonde `/healthz` e `/readyz` non mandano la chiave** (`OmitApiKey`): sul server sono `AllowAnonymous`, ma con un solo schema registrato quello diventa il default e
+  gira su ogni richiesta; una chiave presente costa lookup sul DB (`FindByHashAsync`, `tenants.GetAsync`, `TouchLastUsed`) e col DB giu' `/readyz` darebbe 500 invece di 503 (letto dal codice, non misurato:
+  lezione 44); le catture 01/02/224 sono senza chiave; (2) `/healthz`: solo **200** con testo `ok` (`Accept: text/plain`), GET ritentabile; un 503 di proxy e' ritentato e alla fine `ServerErrorException`;
+  (3) `/readyz`: 200 e 503 sono **esiti** (`IsExpectedStatus` 200||503, mai eccezione, mai retry, `Accept` JSON); un 503 il cui corpo non e' la sonda passa da `ProblemMapper` (`ServerErrorException`,
+  o l'eccezione dello slug se c'e', con request id) e non e' ritentato, come dice il doc della porta; 502/504 di proxy ritentati come ogni GET; (4) cartelle: `ListChildrenAsync(null)` = radice,
+  `FolderCode` vuoto -> `ArgumentException` con `ParamName` della porta (`id`, `parentId`: lezione 45), 409 = `ConflictException` mai ritentato (POST/PATCH/DELETE mai ritentati); update = PATCH
+  fatto a mano su `Routes.Folder(id)`; (5) contatti paginati come i documenti (ordine della query del wire, cursore rimandato tale e quale), categorie = lista; (6) tenant = GET di `tenant` con la chiave
+  (sonda di autenticazione; 401/403 non ritentati); (7) eccezioni di argomento dentro il Task, prima di qualunque richiesta, come T4.3a. **Contro il server @8aec8bb**: metodi/percorsi/status delle catture
+  21, 22, 24, 26, 28, 44, 46, 150-152, 215, 01-03, 224 (INDEX.tsv riletto, lezione 40); `contacts-page`/`contact-detail`/`contact-categories` sono fixture derivate.
+  **Obblighi per T4.4**: costruire i quattro adapter (e `HttpDocumentStore`) sullo **stesso** `FilemasterTransport`; `HttpClient` con `Timeout` infinito, `AllowAutoRedirect=false`, niente decompressione;
+  aggiornare `docs/api-contract.md` (qui vietato): la mappatura del 503 non-sonda di `/readyz` risulta ancora "non ancora scritta" e manca l'omissione della chiave sulle sonde.
+  Duplicazione nota: `JsonCalls` e il `SendJsonAsync` privato di `HttpDocumentStore` fanno la stessa cosa (T4.3a non toccato; unificabile in T4.4 o dopo).
+  **Non verificato**: nessuna richiesta contro un server vero (in particolare il 500 di `/readyz` con chiave e DB giu' e' dedotto dal codice); net48 solo compilato; mutazioni solo su net10.
+- [x] **T4.4** *(fatto 2026-10-02, subagent)* Composizione: `FilemasterHttp` (Infrastructure), root `Filemaster` (DI + factory). **API pubblica nuova**:
+  `Filemaster.Infrastructure.FilemasterHttp.CreateClient(HttpClient, FilemasterOptions, ILoggerFactory? = null, TimeProvider? = null) -> IFilemasterClient`;
+  `Microsoft.Extensions.DependencyInjection.FilemasterServiceCollectionExtensions.AddFilemaster(this IServiceCollection, Action<FilemasterOptions>) -> IHttpClientBuilder` + `const string HttpClientName = "Filemaster"`;
+  `Filemaster.FilemasterClientFactory.Create(FilemasterOptions, HttpMessageHandler? = null, ILoggerFactory? = null) -> FilemasterClient`; `Filemaster.FilemasterClient : IFilemasterClient, IDisposable` (costruttore internal).
+  Internal: `HttpFilemasterClient` (5 porte su UN trasporto), `FilemasterTransport.FromSource(Func<HttpClient>, ...)` (costruttore privato: un overload accessibile avrebbe reso ambiguo `new FilemasterTransport(null!, ...)` dei test),
+  root `FilemasterHandlers` (primario + controllo), `FilemasterOptionsValidator` (`IValidateOptions`), `FilemasterHandlerCheck` (`IHttpMessageHandlerBuilderFilter`). `HttpDocumentStore.SendJsonAsync` ora delega a `JsonCalls.SendAsync`
+  (e `JsonCalls.AcceptJson` sull'upload): test di T4.3a invariati e verdi. `InternalsVisibleTo`: Infrastructure -> `Filemaster` (sicuro: i 4 pacchetti si dipendono con `[x.y.z]`), root -> UnitTests.
+  **Prova (sull'albero vero)**: restore exit 0; build `--no-incremental` 0 avvisi; `dotnet test -c Release --no-build` **5462** (erano 5362: +48 unit per TFM in `tests/Filemaster.UnitTests/Composition/` (5 file), +2 integration per TFM
+  in `GenericHostTests`), exit 0; asset ns2.0 2731/2731 su net10 (unit + integration, poi restore normale rifatto); format x2 exit 0; `CI=true dotnet pack` 4+4 + `verify-packages.sh` exit 0; nuspec di `Filemaster`: 3 gruppi,
+  fratelli `[0.0.0-dev]`, unica esterna `Microsoft.Extensions.Http` 8.0.1 (nessuna dipendenza diretta nuova in `src/`: `verify-packages.sh` non toccato); 209 file senza CR/TAB/non-ASCII. Test di superficie: `TODO(T4.4)` tolto,
+  ora UGUAGLIANZA `{FilemasterHttp, FilemasterOptions, FilemasterRetryOptions}` (anche `WireShapeTests` aggiornato: elencava due tipi). Test: `Microsoft.Extensions.Hosting` **8.0.1** (ultima 8.0.x dal flat container) solo in
+  IntegrationTests; `ServiceCollection` arriva gia' transitivo (M.E.Http -> M.E.Logging -> M.E.DependencyInjection 8.0.1), nessun riferimento aggiunto agli UnitTests.
+  **Mutazioni** (34, copia `mutroot44`, net10, unit + integration, watchdog 240 s): 33 prese al primo giro, **N13** (filtro non registrato) fermato da IDE0005 (using rimasto inutile) -> **N13b** in forma che compila, presa.
+  Nessun sopravvissuto, nessuno stallo. Coperti: redirect/decompressione/PooledConnectionLifetime del primario, catena di `DelegatingHandler` non discesa, i due controlli del primario, Timeout del client nominato e della
+  factory, primario di default, redazione (nessuna, solo chiave, solo Authorization), `ValidateOnStart`, validatore assente/permissivo/su ogni nome, filtro assente/su ogni client/prima delle configurazioni, client e porte
+  transient o mancanti, `AddSingleton` al posto di `TryAdd`, client HTTP catturato una volta, `TimeProvider`/`ILoggerFactory` del contenitore ignorati, Timeout finito accettato (DI e `FilemasterHttp`), ordine
+  opzioni/Timeout, piu' di un trasporto, categoria del logger, dispose dell'handler (utente smaltito, proprio non smaltito), handler utente non controllato.
+  **Decisioni**: (1) **client nominato, non tipizzato**: `IFilemasterClient` e le 5 porte sono **singleton** e il trasporto chiede un `HttpClient` a `IHttpClientFactory` **a ogni tentativo** (sorgente `Func<HttpClient>`):
+  iniettabili ovunque, anche in un singleton, senza il problema del typed client transient catturato (gestore mai ruotato); la rotazione della factory (2 min) vale anche su .NET Framework, dove `HttpClientHandler` non segue il DNS;
+  (2) **`FilemasterHttp.CreateClient` LANCIA** `ArgumentException` (`ParamName` `httpClient`) se `Timeout` non e' infinito: con il default di 100 s i trasferimenti lunghi fallirebbero solo in esercizio e solo con file grandi; le
+  opzioni si controllano prima; il client HTTP non si smaltisce ne' si modifica (provato). In DI un `Timeout` finito messo dall'utente dopo `AddFilemaster` = `InvalidOperationException` alla risoluzione;
+  (3) **opzioni**: opzioni nominate `"Filemaster"`, `IValidateOptions` che chiama `Validate()` (messaggi senza chiave, provato) + `ValidateOnStart` -> con l'host generico l'avvio fallisce (`OptionsValidationException`, provato con
+  `Host.CreateEmptyApplicationBuilder`), senza host alla prima risoluzione del client o di una porta; lette una volta (nessun ricaricamento); (4) **primario**: `SocketsHttpHandler` (`AllowAutoRedirect=false`, decompressione None,
+  `PooledConnectionLifetime` 2 min) su net8/net10, `HttpClientHandler` (stesse regole, `MaxConnectionsPerServer` alzato ad ALMENO 32, mai abbassato) su ns2.0; **un filtro `IHttpMessageHandlerBuilderFilter` rifiuta** un primario
+  sostituito dall'utente che segue i redirect o decomprime (`InvalidOperationException`, solo per il client `"Filemaster"`), e la factory rifiuta lo stesso con `ArgumentException` (`handler`), scendendo i `DelegatingHandler`;
+  un gestore di altro tipo non e' ispezionabile e passa (documentato; l'asset ns2.0 non conosce `SocketsHttpHandler`); (5) redazione `X-API-Key` e `Authorization` (provata con log Trace in memoria, anche con un `Authorization`
+  aggiunto da un gestore dell'utente; le altre intestazioni restano leggibili); (6) **factory**: `FilemasterClient` possiede l'`HttpClient`; il gestore passato dall'utente **non** si smaltisce mai (nessun parametro per cambiarlo:
+  lo smaltisce chi l'ha creato), quello della factory si'; un'istanza a vita dell'applicazione (doc con esempio C# 7.3 e VB.NET); (7) `TryAdd*` ovunque: una porta registrata prima di `AddFilemaster` (un fake) resta;
+  (8) logger e `TimeProvider` dal contenitore; `Retry.MaxAttempts = 1` per chi aggancia Polly (doc XML di `AddFilemaster`); una seconda `AddFilemaster` aggiunge una `configure` alle stesse opzioni (documentato).
+  **Obblighi per T5.5/T6.1**: T5.5: il consumatore net48 usa `FilemasterClientFactory.Create(options)` con le proprieta' (niente `init`), e un consumatore net8 usa `AddFilemaster`; i tipi pubblici del root sono
+  `FilemasterClient`, `FilemasterClientFactory`, `FilemasterServiceCollectionExtensions` (namespace `Microsoft.Extensions.DependencyInjection`). T6.1: col server loopback provare il gestore VERO (redirect davvero non seguito,
+  `Content-Length` con il primario reale, upload in streaming), `MaxConnectionsPerServer` e `AllowWriteStreamBuffering` su net48 (Windows CI), la rotazione dei gestori durante un download aperto.
+  **Non verificato**: net48 (solo l'asset ns2.0 su .NET 10): il minimo di 32 connessioni si vede solo su .NET Framework (su .NET il default e' gia' illimitato: un mutante li' e' equivalente); un download aperto mentre la factory
+  ruota e smaltisce il gestore scaduto (si conta sul fatto che la factory smaltisce solo i gestori non piu' raggiungibili: letto, non misurato); nessun gestore vero verso un server (i test usano gestori finti e la pipeline vera della factory);
+  mutazioni solo su net10. `docs/api-contract.md` non toccato (vietato qui): resta da scrivere anche la composizione.
+  **Decisioni di T4.1 riportate nel brief e rispettate**: upload in streaming (net48 non verificato), download `ResponseHeadersRead`, retry solo GET e prima della consegna, test di superficie scritto in T4.1 (ora uguaglianza).
 - [x] **T5.1** `ci.yml`, **T5.2** `release.yml`, **T5.4** `dependabot.yml` *(fatti 2026-10-01 da subagent senza `dotnet` sul repo; **verificato da me**:
   actionlint `rhysd/actionlint@sha256:b1934ee5...` rc=0 su entrambi i workflow, i 6 SHA riletti con `git ls-remote` (checkout, setup-dotnet,
   softprops identici a Sharp-a-File), lettura integrale di `release.yml`/`ci.yml`/`dependabot.yml`. **Non verificato**: esecuzione reale su GitHub,
   replay Linux in container (T8.1), net48, scambio OIDC con nuget.org.)* Caveat: **la CI non e' verde al primo push finche' non esiste T5.5**
   (il job `pack-smoke` chiama `eng/pack-smoke/run.sh`, `# TODO(T5.5)`); il test di memoria 200 MB e' tenuto verde con `--ignore-exit-code 8`
-  (`# TODO(T6.1)`: a test scritto, togliere il flag e mettere `--minimum-expected-tests 1`). Il piano diceva "il commit del tag deve *discendere*
+  (`# TODO(T6.1)`: **chiuso da T6.1** il 2026-10-03, ora `--minimum-expected-tests 1`). Il piano diceva "il commit del tag deve *discendere*
   da `origin/main`": alla lettera e' l'opposto; implementato "raggiungibile da `origin/main`" (`git merge-base --is-ancestor HEAD origin/main`).
 - [x] **T5.3** `eng/verify-packages.sh [--require-commit] <cartella> <versione>` + `eng/docker-replay.sh [--src <cartella>] [--keep]` *(fatti 2026-10-01;
   **verificato da me**: shellcheck `koalaman/shellcheck@sha256:bb596a0d...` rc=0; i 3 digest nello script (sdk:10.0, runtime:8.0, shellcheck) ririsolti con
@@ -417,13 +496,46 @@ pinnate per SHA completo + commento col tag: checkout/setup-dotnet/softprops cop
 - [ ] **T5.5** `eng/pack-smoke/run.sh <cartella-pacchetti> <versione>` + progetto console usa-e-getta (net8/net10, net48 su Windows) che installa
   i nupkg da un feed locale e chiama un server finto; il consumatore net48 NON sovrascrive `LangVersion` e costruisce davvero
   `UploadDocumentRequest`/`DocumentQuery` (serve T4 + T6.1). Referenziato da `ci.yml` (job `pack-smoke`) con `# TODO(T5.5)`.
-- [ ] **T6.1** Server loopback, **T6.2** harness e2e (`eng/e2e/*`, `e2e.yml`, riusa il T0.3), **T6.3** cattura fixture dal
+- [x] **T6.1** *(fatto 2026-10-03, subagent)* Server loopback + integration test contro il gestore VERO. `tests/Filemaster.IntegrationTests/Loopback/` (7 file): `LoopbackServer` (HTTP/1.1 a mano su
+  `TcpListener`, `IPAddress.Loopback` porta 0, compila su net48; registra metodo/percorso/intestazioni/corpo, oltre `keepBodyBytes` solo conteggio + SHA-256; risposte programmabili: status, intestazioni, corpo, chunked,
+  troncamento, chiusura (FIN), reset (RST), attesa su segnale, redirect; **ogni attesa ha un limite DENTRO l'helper** (20 s), anche `Dispose` (5 s)), `HttpWireReader`, `LoopbackExchange`, `RecordedRequest`, `GeneratedStream`
+  (deterministico, seekable o no, sa se e' stato chiuso), `MultipartParts` (parser indipendente), `LoopbackSupport`. Test (6 file, client da `FilemasterClientFactory.Create` = primario vero, o `AddFilemaster` nell'host vero):
+  `LoopbackUploadTests` (ordine delle parti con il file ultimo, `filename*=utf-8''` per nomi non ASCII, stream utente non chiuso, seekable -> `Content-Length`, non seekable -> chunked, partenza dalla posizione corrente),
+  `LoopbackDownloadTests` (intero, Range 206 con `Content-Range`, Range ignorato -> 200, troncamento -> `ContentIntegrityException(IsTruncated)` anche ripetuto, chunked intero e tagliato, gzip non decompresso e niente
+  `Accept-Encoding`, JSON gzip -> `UnexpectedResponseException`, 4 download aperti + una lista = 5 connessioni), `LoopbackWireTests` (sonde senza chiave, ogni altra chiamata con chiave + `X-Request-ID` 32 hex unico + `User-Agent`;
+  301/302/303/307/308 non seguiti: il secondo server non riceve NESSUNA connessione, anche per DELETE e download), `LoopbackResilienceTests` (GET ritentato su 503 non-problem e su connessione chiusa, stesso request id;
+  POST/DELETE/upload mai ritentati su 503 ne' su chiusura; `RequestTimeout` -> `FilemasterTimeoutException`; annullamento -> `OperationCanceledException`; `TransferTimeout` di download e di upload fermo; reset a meta'
+  upload -> `ConnectionException`; 413 + chiusura -> `RequestTooLargeException` o `ConnectionException`), `LoopbackHostTests` (DI col primario della libreria: redirect, `Content-Length`; **rotazione dei gestori**),
+  `LoopbackMemoryTests` (`[Trait("Category","Memory")]`, 200 MB generati, seekable e no).
+  **Difetto di produzione trovato e corretto** (riprodotto prima con `A_write_or_a_verify_is_sent_once_when_the_connection_closes_before_the_response`, rosso per delete/verify/folder-delete: 4 richieste invece di 1):
+  `SocketsHttpHandler` (.NET 8 e 10) rimanda da solo fino a 4 volte una richiesta SENZA `Content` se la connessione si chiude prima della risposta, quindi DELETE e POST verify erano ritentati malgrado "mai ritentati".
+  Fix minimo in `FilemasterTransport.CreateMessage`: ogni non-GET senza corpo parte con corpo vuoto (`Content-Length: 0`), che il gestore non rimanda (commento + remarks). Unit: 2 test di delete aggiornati
+  (`Body` vuoto e `Content-Length` 0 invece di `null`), +4 in `TransportCommonTests` (POST/DELETE/PATCH col corpo vuoto, GET senza corpo e corpo della richiesta conservato).
+  **Prova (sull'albero vero)**: restore 0; build `--no-incremental` 0 avvisi 0 errori; `dotnet test -c Release --no-build` **5550** (erano 5462: +4 unit e +40 integration per TFM; i 2 test Memory sono INCLUSI nel run
+  di soluzione, ~150 ms ciascuno), exit 0; asset ns2.0 su net10 2729 + 46 exit 0 (poi restore normale); format x2 0; `CI=true dotnet pack` 4+4 + `verify-packages.sh` 0; 214 `.cs` senza CR/TAB/non-ASCII;
+  compilazione net48 (`-p:IncludeNet48=true -f net48`) 0 avvisi. Integration 3 volte di fila senza Memory: net10 11.7/11.7/11.8 s, net8 12.0/11.7/11.7 s (44/44; i ~10 s sono il ciclo di pulizia della factory nel test di rotazione).
+  **Memoria** (crescita del picco di memoria gestita, soglia < 64 MB): net10 seekable +1.6 MB, non seekable +3.0 MB; net8 +1.6 / +3.1 MB; working set +0.0..+0.5 MB.
+  **Mutazioni** (21, copia `mutroot61`, net10, integration, watchdog 300 s): 21 prese, 0 sopravvissuti, 0 stalli: redirect e decompressione del primario, Timeout finito (factory e DI), primario di default in DI, upload
+  bufferizzato (`LoadIntoBufferAsync` e `MemoryStream`: preso solo dal test di memoria), chiave alle sonde, chunked forzato, retry di POST/DELETE e dell'upload, `ResponseContentRead`, fix T6.1 tolto, GET mai ritentati,
+  `IOException` non tradotta, scadenza del download che non rilascia la risposta, User-Agent/X-Request-ID assenti, request id nuovo a ogni tentativo, Range non mandato, `MaxConnectionsPerServer = 2`.
+  **Workflow**: in `ci.yml` e `release.yml` il passo di memoria net48 ora ha `--minimum-expected-tests 1` (tolto `--ignore-exit-code 8` e il `TODO(T6.1)`; provato in locale: trait sbagliato -> exit 8);
+  actionlint `rhysd/actionlint@sha256:b1934ee5...` (v1.7.12, digest da `docker images --digests`) rc=0.
+  **Decisioni**: client col primario vero, mai un gestore finto; rotazione provata con `SetHandlerLifetime(1 s)` e i log della factory (`HandlerExpired`, poi `CleanupCycleEnd` con `DisposedCount >= 1`, GC a ogni giro): il download
+  aperto sul gestore smaltito arriva intero; 413 + chiusura accetta i due esiti (su net10/macOS e' `ConnectionException`, broken pipe); i tempi dei timeout si asseriscono con limiti larghi.
+  **Osservazioni (non difetti)**: dentro OGNI tentativo del trasporto un GET puo' essere rimandato dal gestore fino a 4 volte (innocuo: idempotente); la `TransferTimeout` di un download fermo scatta dopo ~3 s con 1 s
+  configurato (rilascio della risposta = `ResponseDrainTimeout` 2 s).
+  **Non verificato**: net48 eseguito (solo compilato: `MaxConnectionsPerServer` e `AllowWriteStreamBuffering` di `HttpClientHandler` li prova il passo di memoria su Windows CI); asset ns2.0 su .NET Framework; Linux/amd64;
+  mutazioni solo su net10.
+  **Obblighi per T5.5/T6.2**: T5.5 puo' riusare l'idea del server (non il codice: e' nei test) per lo smoke dei pacchetti; T6.2 deve riprovare contro il server vero i punti che il loopback simula (413 di Kestrel,
+  Range, redirect assenti) e il comportamento di DELETE con `Content-Length: 0` (il server lo accetta? da verificare: nelle catture i DELETE non avevano corpo).
+- [ ] **T6.2** harness e2e (`eng/e2e/*`, `e2e.yml`, riusa il T0.3), **T6.3** cattura fixture dal
   server reale (`eng/e2e/capture-fixtures.sh`, con scrubbing di chiavi ed email).
 - [ ] **T7.1** Docs: README (it), `docs/architecture.md`, `docs/publishing.md` (la tua checklist), `docs/api-contract.md`
   (stranezze: 404 su id malformato, body rigidi, 409 ambiguo, validazione tardiva dell'upload).
 
 **Fase B — completamento API** (dopo che la A e' verde): audit, account, API key, webhook admin, import/export ZIP,
-`IApiKeyProvider`. Si puo' tagliare dal primo rilascio se preferisci.
+`IApiKeyProvider`. **Decisione dell'utente (2026-10-02): la Fase B va DOPO v0.1.0** (diventa la 0.2.0): prima si chiude la Fase A
+e la Fase 8 fino al tag rc.
 
 **Fase 8 — verifica finale (nessun "fatto" prima di questa)**
 - [ ] **T8.1** Replay in clone pulito dentro `sdk:10.0`; **T8.2** ispezione dei nupkg (3 TFM, range, metadata);
@@ -455,7 +567,57 @@ pinnate per SHA completo + commento col tag: checkout/setup-dotnet/softprops cop
 5. Suite live contro un Sharp-a-File vero (Docker) — la prova che il client parla davvero col server.
 6. Dopo il tuo push: CI verde su GitHub; poi `v0.1.0-rc.1` e controllo su nuget.org (4 pacchetti, snupkg, Release con asset).
 
+## Ripresa 2026-10-03 (sessione di chiusura della Fase A)
+
+Baseline rifatta prima di costruire (lezioni 12/30/39): SDK 10.0.401 + 8.0.425, runtime 8.0.31 + 10.0.12 (invariati); `main` = `512d764`
+("last update", commit dell'utente: T3.2/T3.3/T4.1/T4.2) + modifiche non committate di T4.3-T6.1; Sharp-a-File `dev` ancora `8aec8bb`; nessun processo
+residuo; restore 0, build `--no-incremental` 0 avvisi, **5550 test verdi** (= fine T6.1). Docker era spento: avviato.
+
+Ordine (in serie per tutto cio' che invoca `dotnet`, lezione 14; i documenti possono andare in parallelo):
+- [x] **R1 = T5.5** *(fatto 2026-10-03, subagent; **verificato da me**: pack 0.0.0-smoke.7 exit 0, `verify-packages.sh` 0, `run.sh` 0: net8/net10 OK via DI e factory,
+  net48 compilato in C# 7.3, floor 8.0.x dal `project.assets.json`)* `eng/pack-smoke/run.sh [--keep] <cartella> <versione>` + `consumers/{Modern,Net48,Shared}` (server finto
+  `TcpListener` con le risposte catturate 03/47/71, feed locale con package source mapping, `NUGET_PACKAGES` isolato). Mutanti su copia: `init` -> CS8370 al build net48;
+  versione assente -> 64; `X-API-Key` non mandata -> 1; parte file rinominata -> 1; M.E.Http 9 -> floor rotti, 1. `TODO(T5.5)` tolto da `ci.yml`.
+  **Non verificato**: esecuzione net48 su Windows, Git Bash, Ubuntu/mawk, shellcheck/actionlint (Docker spento: in R6).
+- [x] **R2 = T7.1 (parte 1)** *(fatto 2026-10-03, subagent; **verificato da me**)* README (516 righe, e' anche il readme NuGet), `docs/architecture.md`, `docs/publishing.md`.
+  Ogni blocco di codice del README e' una regione di un campione in scratchpad `docs-samples/` (README rigenerato da `build_readme.py`: `cmp` identico). **Compilati da me
+  contro i pacchetti 0.0.0-smoke.7** (feed locale, cache isolata, warning-as-errors): C# 7.3 net48 (9 file), VB net48 `Option Strict On` (2), Web net8+net10 (3): exit 0, 0 avvisi.
+  Corretti 2 doc XML segnalati dal subagent: `IFilemasterClient` (diceva "non possiede niente da rilasciare", ma il `FilemasterClient` della factory e' `IDisposable`) e
+  `FilemasterException` (slug `error` + 5xx = `ServerErrorException`, come fa `ProblemMapper`); build 0 avvisi, format x2 0. Il piano B di `publishing.md` e' **manuale**
+  (`release.yml` non legge `NUGET_API_KEY`); i parametri delle porte si chiamano `cancellationToken` (il piano diceva `ct`).
+- [x] **R3 = T6.2** *(codice fatto 2026-10-03, subagent; **verificato da me**: build `--no-incremental` 0 avvisi, `dotnet test` 5612 = 5550 superati + 62 ignorati (31 Live x net8/net10), exit 0;
+  pin delle azioni di `e2e.yml` identici a `ci.yml`; SHA del server = `git rev-parse dev`. File: `eng/e2e/{_common,run-e2e,seed,down,logs}.sh` + compose + README, `.e2e/` in `.gitignore`
+  (stato con segreti 0600), `e2e.yml` (dispatch + notturno, `FILEMASTER_E2E_REQUIRED=1`: in CI un URL mancante fallisce invece di saltare), `tests/.../Live/` 31 test `Category=Live`
+  (`ContractDriftTests` compresa la prova DELETE/verify con `Content-Length: 0`); seed SQL di categoria, 3 contatti e un documento senza contenuto collegato.
+  **Corsa live fatta da me dopo lo sblocco di Docker**: primo avvio fallito sul seed (`Msg 1934`, `QUOTED_IDENTIFIER`: sqlcmd parte OFF e i contatti hanno indici filtrati)
+  -> `-I` in `sqlcmd_run`; poi server su (`--mac`), **31/31 su net10 e net8, cinque corse di fila sullo stesso server** con `FILEMASTER_E2E_REQUIRED=1`; log del server: nessun 5xx,
+  DELETE 204 e verify 200 con `Content-Length: 0` (obbligo T6.1 chiuso). shellcheck (`-x -P SCRIPTDIR`, digest da `docker-replay.sh`) 0 dopo 3 correzioni (variabili inutili, direttive
+  SC1090/SC1091 sui file di stato), actionlint (digest da `docker images --digests`) 0 su 3 workflow.)* `eng/e2e/*` (dagli script in `.scratch/spikes-e2e`, senza `state/`), `e2e.yml` pinnato a `8aec8bb`, suite live opt-in
+  (`FILEMASTER_E2E_URL`/`_KEY`/`_READ_KEY`, `Assert.SkipWhen`), eseguita davvero in locale (Azure SQL Edge, `--mac`). Verifica anche `DELETE` con `Content-Length: 0` (obbligo T6.1).
+- [x] **R4 = T6.3** *(fatto 2026-10-03, da me)* `eng/e2e/capture-fixtures.sh` promosso dallo spike (uscita in `.e2e/fixtures/`, nome non ASCII scritto con escape ottali,
+  guardia: rifiuta un server con limite di upload < 8 MiB, perche' il limite basso della suite live trasformava le catture da 5 MiB in 413: 2 MISMATCH al primo giro). Due catture complete
+  (223 richieste, `0 MISMATCH`, 5 MiB byte-esatti) confrontate con le golden per nome/status/campi: **nessuna differenza di contratto** (7 differenze, tutte di dati). Le golden restano;
+  aggiunte le catture vere `captured/301-304` (contatti, dettaglio, categorie, documento senza contenuto con 3 contatti) + `CapturedContactsTests` (8 test: lettori sui corpi veri e
+  "ogni campo del server esiste nella fixture derivata"; provato con un mutante sulla copia in `bin/`). **Non fatto**: ricattura su SQL Server 2022 (e' `e2e.yml` su Ubuntu); buste webhook (fase B).
+  Testo originale:  `eng/e2e/capture-fixtures.sh` con scrubbing; sostituire le fixture derivate che il server sa produrre (documento senza contenuto, `metadata` assente...);
+  quelle non riproducibili restano marcate "derivate".
+- [x] **R5 = T7.1 (parte 2)** *(fatto 2026-10-03)* `api-contract.md`: stato, sezione "Composizione e gestore HTTP", "Test contro il server vero", "Non verificato" riscritto;
+  `architecture.md`/`publishing.md` aggiornati (pack-smoke e live esistono, nomi dei job). Testo originale: `docs/api-contract.md` allineato a T4.3b/T4.4/T6 (503 non-sonda di `/readyz`, sonde senza chiave, composizione, esiti e2e).
+- [x] **R6 = Fase 8 (parte locale)** *(2026-10-03)* T8.1 `eng/docker-replay.sh` da copia pulita in `sdk:10.0` (arm64): 10/10 passi, 2737 unit per TFM; T8.2 `verify-packages.sh` 0;
+  T8.3 pack-smoke 0; T8.4 actionlint/shellcheck 0; T8.5 suite live verde (R3). Restano: prima CI su GitHub (job Windows net48 mai visto), `e2e.yml` su Ubuntu/SQL 2022, T8.6. Testo originale:: T8.1 replay `sdk:10.0`, T8.2 nupkg, T8.3 pack-smoke, T8.4 actionlint, T8.5 run live; T8.6 resta all'utente (tag rc, commit/push).
+
 ## Review
+
+### Stato al 2026-10-03 (fine della Fase A)
+
+**Verificato da me sul repo**: build `--no-incremental` 0 avvisi; `dotnet test` 5628 (5566 superati + 62 Live ignorati senza server), exit 0; format x2 0; replay Linux 10/10;
+pack + `verify-packages.sh` + pack-smoke 0; campioni del README compilati (C# 7.3, VB, Web); suite live 31/31 su net8/net10 contro Sharp-a-File `dev` 8aec8bb vero; actionlint e shellcheck 0;
+nessun segreto reale fra i 470 file tracciabili (`.e2e/` ignorata), tutto ASCII/LF.
+
+**Da fare all'utente**: commit/push delle modifiche (nessun commit fatto da me); guardare la prima CI su GitHub (job Windows net48 e pack-smoke Windows: mai eseguiti); lanciare `e2e.yml` a mano una
+volta; i passi una tantum di `docs/publishing.md`; poi il tag `v0.1.0-rc.1`. **Segnalazione per Sharp-a-File** (non per il client): cartella con padre inesistente e cartella non vuota
+producono log `Error` con stack di eccezioni del database pur rispondendo 404/409.
+
 
 ### Stato al 2026-10-01 (lavoro interrotto per limite d'uso)
 

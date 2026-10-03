@@ -1,0 +1,24 @@
+# Override SOLO per Apple Silicon (run-e2e.sh --mac). Su Ubuntu CI NON va usato.
+#
+# Perche': mcr.microsoft.com/mssql/server:2022-latest e' solo linux/amd64. Con Docker Desktop che emula via QEMU
+# (UseVirtualizationFrameworkRosetta=false, il caso misurato) sqlservr muore subito con "qemu: uncaught target
+# signal 11 (Segmentation fault)" (3 tentativi su 3, exit 139). NON verificato qui: con "Use Rosetta for
+# x86_64/amd64 emulation" attivo in Docker Desktop (richiede il VMM Apple Virtualization) l'immagine ufficiale con
+# `platform: linux/amd64` dovrebbe partire e non servirebbe questo override.
+#
+# Il ripiego nativo arm64 e' azure-sql-edge (motore SQL Server 15.0 = 2019, ritirato ma ancora scaricabile). Non ha
+# sqlcmd (seed.sh usa un contenitore client) e NON supporta `ISJSON(x, OBJECT)` usato dalla migrazione iniziale del
+# server: run-e2e.sh --mac ricostruisce l'immagine da una COPIA del sorgente con quella sola riga resa compatibile
+# (ISJSON(metadata, OBJECT) = 1 -> ISJSON(metadata) = 1). Le fixture catturate cosi' vanno rigenerate su SQL Server
+# 2022 vero (CI Ubuntu) prima di considerarle "golden".
+services:
+  mssql:
+    image: ${E2E_MSSQL_IMAGE:-mcr.microsoft.com/azure-sql-edge:latest}
+    platform: linux/arm64
+    healthcheck:
+      # Niente sqlcmd nell'immagine: basta che la porta risponda; l'attesa vera la fa run-e2e.sh con SELECT 1.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/1433'"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 5s

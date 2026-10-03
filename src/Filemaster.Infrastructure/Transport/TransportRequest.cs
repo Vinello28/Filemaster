@@ -50,4 +50,12 @@ internal sealed class TransportRequest
     /// valgono tutti i 2xx. Per <c>/readyz</c> sono 200 e 503 (il 503 e' l'esito della sonda, non un errore).
     /// </summary>
     internal Func<int, bool>? IsExpectedStatus { get; set; }
+
+    /// <summary>
+    /// Vero per le chiamate anonime (le sonde <c>/healthz</c> e <c>/readyz</c>): il trasporto non aggiunge <c>X-API-Key</c> (le altre
+    /// intestazioni restano). Serve perche' il server autentica OGNI richiesta che porta una chiave, anche verso una rotta anonima, e
+    /// per farlo interroga il database: con il database giu' <c>/readyz</c> risponderebbe 500 invece del suo 503, e ogni sonda
+    /// costerebbe una lettura (e a volte una scrittura) del database. Di default falso: la chiave va su tutto il resto.
+    /// </summary>
+    internal bool OmitApiKey { get; set; }
 }

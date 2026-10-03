@@ -36,7 +36,7 @@ RUNTIME8_IMAGE="mcr.microsoft.com/dotnet/runtime:8.0@sha256:37466ea190f696105c1c
 # il layer `apt-get install unzip` (l'immagine sdk non ha unzip, che serve a eng/verify-packages.sh; i runner Ubuntu di
 # GitHub lo hanno gia').
 #
-# Controllo statico (0 avvisi): docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck@sha256:bb596a0d169b85ddd81d8b6d3a2ff6d5baf5fca10b97f575ebc647c3dff62b3d eng/*.sh
+# Controllo statico (0 avvisi): docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck@sha256:bb596a0d169b85ddd81d8b6d3a2ff6d5baf5fca10b97f575ebc647c3dff62b3d -x -P SCRIPTDIR eng/*.sh eng/e2e/*.sh eng/pack-smoke/*.sh
 # (digest dell'indice di koalaman/shellcheck:stable, letto il 2026-10-01 con lo stesso comando imagetools inspect).
 #
 # Differenze note rispetto a ci.yml su GitHub: il replay gira su linux/arm64 se l'host e' un Mac Apple Silicon (CI: amd64);

@@ -15,5 +15,8 @@
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.2" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
+    <!-- Solo IntegrationTests: l'host generico vero, per provare che opzioni non valide fermano StartAsync (ValidateOnStart).
+         8.0.1 = ultima 8.0.x sul flat container (stesso floor 8.0.x di Microsoft.Extensions.Http). -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
   </ItemGroup>
 </Project>

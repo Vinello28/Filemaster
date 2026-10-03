@@ -8,12 +8,14 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 
   <!-- net48 (solo Windows, o -p:IncludeNet48=true per compilare): vedi Filemaster.UnitTests. -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="PolySharp" PrivateAssets="all" />
     <Reference Include="System.Net.Http" />
+    <Reference Include="System.IO.Compression" />
     <Using Include="System.Net.Http" />
   </ItemGroup>
 

@@ -135,6 +135,46 @@ progetto emerse in pianificazione.
     segnalato: vale per ogni riferimento a "fixture N" scritto a memoria.
 41. **Rapporto del subagent != prova.** Per T4.2 il rapporto era corretto in tutto (build, 2387 test, format, pack, grep), ma la lacuna piu' utile (il Domain che non manteneva la promessa) l'ho trovata e chiusa solo
     rileggendo la segnalazione e riproducendola con un test che falliva prima del fix: riprodurre SEMPRE un difetto segnalato prima di correggerlo, e provare il fix con mutanti (D1-D5).
+42. **L'output italiano di `dotnet test` (MTP) contiene `non riuscito: N` due volte** (2026-10-02, T4.3a): `  non riuscito: 1` nel riepilogo e `...codice di uscita non riuscito: 2` alla fine. Uno
+    script di mutazione con `re.findall(r'non riuscito: (\d+)')[-1]` riportava "2" per ogni mutante (il codice di uscita). Ancorare la regex (`^\s+non riuscito:` con `re.M`) e decidere preso/non preso
+    dal codice di uscita, mai dal numero letto. I nomi dei test falliti sono nelle righe `operazione non riuscita <nome completo>`.
+43. **Una modalita' del trasporto scelta male si vede solo dal tempo** (T4.3a, mutante M29): un upload mandato con `SendBufferedAsync` invece di `SendUploadAsync` passa ogni test di forma (stesso metodo, corpo,
+    nessun ritentativo per un POST); lo prende solo un test con `RequestTimeout` corto e `TransferTimeout` lungo. Per ogni adapter: un test di tempo per ogni chiamata che usa una modalita' non bufferizzata.
+44. **"La rotta e' anonima" non vuol dire "la chiave e' innocua" (2026-10-02, T4.3b).** Con UN solo schema registrato (`AddAuthentication().AddScheme(...)`
+    senza default) ASP.NET Core 7+ lo usa come schema di default e `UseAuthentication` lo esegue su OGNI richiesta, anche verso `AllowAnonymous`: il gestore
+    di Sharp-a-File, se trova `X-API-Key`, cerca la chiave nel database. Con il database giu' `/readyz` darebbe 500 (o aspetterebbe il timeout SQL) invece del
+    suo 503 (letto nel codice @8aec8bb, **non misurato** contro un server con il database giu'). Regola: prima di dire "mandarla e' innocuo" leggere il percorso del middleware (`WebSurface.Map`, gestore di autenticazione), non solo i metadati
+    della rotta; le sonde ora partono senza chiave (`TransportRequest.OmitApiKey`), come le catture 01/02/224 ("auth: nessuna").
+45. **Il `ParamName` di un'eccezione e' quello della PORTA, non quello dell'helper del wire** (T4.3b). `Routes.Folder(code)` e `FolderWire.ListPath(parent)` lanciano
+    con `code`/`parent`, ma i parametri di `IFolderCatalog` si chiamano `id`/`parentId`: l'adapter deve controllare prima e lanciare col nome giusto (come T4.3a con
+    `FileName`). Per ogni adapter: un test per argomento che confronta `ParamName` con il nome nella firma della porta.
+46. **`ValidateOnStart` (M.E.Options 8) lo esegue solo l'host generico** (T4.4): registra un `IStartupValidator` che `Host.StartAsync` chiama; con un `ServiceProvider` nudo nessuno lo chiama e l'errore arriva alla prima
+    `IOptions*.Value`/`Get(nome)`. Per provarlo senza host: `provider.GetRequiredService<IStartupValidator>().Validate()`; con l'host vero serve `Microsoft.Extensions.Hosting` nei test. In M.E.Http 8 `IHttpClientBuilder.Services`
+    NON e' la `IServiceCollection` passata (e' un involucro): non asserirne l'identita'. I log di `IHttpClientFactory` scrivono le intestazioni solo a livello Trace (`X-API-Key: *` se oscurata): un test sulla redazione deve
+    prima provare che l'intestazione e' stata scritta, altrimenti passa a vuoto.
+47. **Un overload in piu' su un costruttore usato dai test con `null!` rompe la compilazione (CS0121)** (T4.4): `new FilemasterTransport(null!, opzioni)` diventa ambiguo se esiste anche `(Func<HttpClient>, ...)`. Forma
+    giusta: costruttore privato + metodo statico con nome (`FromSource`), il costruttore esistente lo chiama con `: this(...)`. E un mutante che toglie una riga di registrazione puo' lasciare un `using` inutile (IDE0005 lo ferma):
+    rifarlo lasciando un uso del tipo (`_ = typeof(...)`), come dice la 33.
+48. **`SocketsHttpHandler` rimanda DA SOLO una richiesta senza corpo** (2026-10-03, T6.1, misurato su .NET 8 e 10 col server di loopback): se il server chiude la connessione prima del primo
+    byte della risposta, una richiesta senza `Content` (GET, ma anche DELETE e POST senza corpo) viene ripetuta fino a 4 invii in tutto, anche su connessioni nuove; con un `Content` (anche vuoto) no.
+    Una regola "mai ritentato" nel NOSTRO codice non basta: va provata sul filo con il gestore vero. Fix del trasporto: corpo vuoto (`Content-Length: 0`) per ogni non-GET senza corpo. E un test di
+    "retry del client" che chiude la connessione passa grazie al gestore, non al client: deve fallire piu' volte di quante il gestore ne rifa' (4).
+49. **Rilasciare una risposta a meta' corpo con `SocketsHttpHandler` aspetta `ResponseDrainTimeout` (2 s)** (T6.1): una `TransferTimeout` di 1 s su un download fermo arriva dopo ~3 s.
+    Le soglie di tempo dei test sui timeout vanno larghe (limite massimo, non valore esatto).
+50. **Una proprieta' del messaggio letta DOPO che il trasporto l'ha smaltito lancia `ObjectDisposedException`** (T6.1): `request.Content.Headers.ContentLength` in un gestore finto va catturato
+    durante l'invio (`Then((request, _) => ...)`), non dopo.
+51. **Ripetuta la 18: `build && test` in catena con un filtro su un test appena scritto ha eseguito i binari vecchi** (T6.1). Script che esegue i test solo se la build ha exit 0, e legge l'exit code della build.
+52. **Pack-smoke (T5.5)**: un `#nullable disable` dentro `#if NETCOREAPP` compila in C# 7.3 (sezione saltata = non controllata): un sorgente condiviso fra net8/10 e net48. I floor si leggono da
+    `project.assets.json` + nuspec estratto nel `NUGET_PACKAGES` isolato (niente `unzip` su Git Bash): un rialzo transitivo (M.E.Http 9 trascina AsyncInterfaces/Logging a 9.0.0) si vede solo li'.
+    `dotnet pack <csproj>` impacchetta SOLO quel progetto. Il feed locale vuole il package source mapping (`Filemaster*` solo locale), altrimenti un file mancante verrebbe preso da nuget.org.
+53. **Script e2e (T6.2)**: mai `umask 077` globale in uno script che costruisce un contesto Docker (i file 0600 diventano illeggibili alla build): i segreti si scrivono con un helper
+    (subshell con umask, `chmod 600`, `mv`). In bash 3.2 un heredoc dentro `$( )` puo' essere letto male: metterlo in una funzione. Una suite live opt-in ha bisogno di un interruttore
+    "obbligatoria" (`FILEMASTER_E2E_REQUIRED=1`): senza, una variabile persa in CI produce una corsa tutta verde di test saltati. Per il 413 si abbassa il limite del server (4 MiB), non si mandano centinaia di MiB.
+54. **Seed SQL e catture contro il server vero (2026-10-03)**: `sqlcmd` parte con `QUOTED_IDENTIFIER OFF` e SQL Server rifiuta le scritture su tabelle con indici filtrati (Msg 1934): sempre `-I`
+    (EF/ADO.NET lo accendono da soli, per questo l'app non lo vede). Due strumenti sullo stesso server possono pretendere configurazioni opposte (limite di upload 4 MiB per i 413 della suite,
+    >= 8 MiB per le catture da 5 MiB): lo strumento che dipende dalla configurazione la controlla e si rifiuta con il comando giusto, invece di produrre catture "vere" ma sbagliate.
+    Una fixture derivata minima non e' l'oracolo dei NOMI dei campi (il dettaglio contatto derivato aveva 4 campi): per il confronto si usa l'oggetto piu' completo. Una suite che passa al
+    primo colpo si prova dai log del server (richieste e status visti), non dal riepilogo dei test.
 
 ## Esiti degli spike
 

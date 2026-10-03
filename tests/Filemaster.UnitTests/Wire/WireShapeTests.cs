@@ -37,11 +37,11 @@ public sealed class WireShapeTests
     }
 
     [Fact]
-    public void The_public_surface_of_the_assembly_is_still_only_the_two_options_types()
+    public void The_public_surface_of_the_assembly_is_still_only_the_options_and_the_composition()
     {
         var exported = InfrastructureAssembly.GetExportedTypes().Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
 
-        Assert.Equal(new[] { "FilemasterOptions", "FilemasterRetryOptions" }, exported);
+        Assert.Equal(new[] { "FilemasterHttp", "FilemasterOptions", "FilemasterRetryOptions" }, exported);
     }
 
     [Fact]

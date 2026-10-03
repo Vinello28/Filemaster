@@ -6,8 +6,8 @@ using Filemaster.Infrastructure;
 namespace Filemaster.UnitTests.Infrastructure;
 
 /// <summary>
-/// La superficie pubblica dell'Infrastructure, resa eseguibile: i soli tipi pubblici ammessi sono le opzioni (e la facciata di
-/// composizione che arrivera' con T4.4); nessun <c>init</c> e nessun <c>required</c> sui membri pubblici (chi chiama da C# 7.3 non
+/// La superficie pubblica dell'Infrastructure, resa eseguibile: i soli tipi pubblici sono le opzioni e la composizione
+/// (<see cref="FilemasterHttp"/>); nessun <c>init</c> e nessun <c>required</c> sui membri pubblici (chi chiama da C# 7.3 non
 /// puo' usarli); ogni tipo, proprieta', campo e metodo pubblico ha un <c>&lt;summary&gt;</c> nel file XML; l'assembly non dipende dal
 /// livello sopra (<c>Filemaster</c>) ne' da <c>Microsoft.Extensions.Http</c> o <c>DependencyInjection</c>. Tutto il resto del codice
 /// dell'Infrastructure (trasporto, mappatura degli errori, adapter, DTO) e' <c>internal</c>.
@@ -21,25 +21,35 @@ public sealed class InfrastructureShapeTests
 
     private static readonly Assembly InfrastructureAssembly = typeof(FilemasterOptions).Assembly;
 
-    // I tipi pubblici consentiti. FilemasterHttp, la facciata di composizione (CreateClient), non esiste ancora: arriva con T4.3/T4.4.
-    // TODO(T4.4): quando FilemasterHttp esiste, questo insieme diventa un'UGUAGLIANZA con i tipi pubblici dell'assembly (e si toglie
-    // il controllo "e' un sottoinsieme"): oggi basta l'inclusione, perche' un tipo pubblico in piu' di questi tre e' comunque un errore.
-    private static readonly string[] AllowedPublicTypes =
+    // I tipi pubblici, ESATTAMENTE questi (ordine ordinale): un tipo in piu' o in meno e' un errore.
+    private static readonly string[] PublicTypes =
     {
+        nameof(FilemasterHttp),
         nameof(FilemasterOptions),
         nameof(FilemasterRetryOptions),
-        "FilemasterHttp",
     };
 
     [Fact]
-    public void Every_public_type_of_the_assembly_is_one_of_the_allowed_ones_and_the_options_are_there()
+    public void The_public_types_of_the_assembly_are_exactly_the_options_and_the_composition()
     {
         var publicTypes = InfrastructureAssembly.GetExportedTypes().Select(t => t.FullName!).OrderBy(n => n, StringComparer.Ordinal).ToArray();
 
-        Assert.Contains("Filemaster.Infrastructure.FilemasterOptions", publicTypes); // il controllo non passa a vuoto
-        Assert.Contains("Filemaster.Infrastructure.FilemasterRetryOptions", publicTypes);
-        var allowed = AllowedPublicTypes.Select(name => "Filemaster.Infrastructure." + name).ToArray();
-        Assert.All(publicTypes, name => Assert.Contains(name, allowed));
+        Assert.Equal(PublicTypes.Select(name => "Filemaster.Infrastructure." + name), publicTypes);
+    }
+
+    [Fact]
+    public void The_composition_is_a_static_class_with_the_one_CreateClient_method()
+    {
+        var type = typeof(FilemasterHttp);
+        Assert.True(type.IsAbstract && type.IsSealed, "FilemasterHttp: classe static");
+
+        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
+        var create = Assert.Single(methods);
+        Assert.Equal(nameof(FilemasterHttp.CreateClient), create.Name);
+        Assert.Equal(
+            new[] { typeof(HttpClient), typeof(FilemasterOptions), typeof(Microsoft.Extensions.Logging.ILoggerFactory), typeof(TimeProvider) },
+            create.GetParameters().Select(p => p.ParameterType));
+        Assert.Equal(typeof(Filemaster.Application.IFilemasterClient), create.ReturnType);
     }
 
     [Fact]

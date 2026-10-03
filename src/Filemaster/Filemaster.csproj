@@ -19,4 +19,8 @@
     <ProjectReference Include="..\Filemaster.Application\Filemaster.Application.csproj" />
     <ProjectReference Include="..\Filemaster.Infrastructure\Filemaster.Infrastructure.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Filemaster.UnitTests" />
+  </ItemGroup>
 </Project>

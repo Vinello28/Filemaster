@@ -1,0 +1,6 @@
+<Project>
+  <!-- Confine voluto e vuoto. MSBuild cerca Directory.Build.props risalendo le cartelle: questo file ferma la ricerca, cosi'
+       i consumatori non ereditano LangVersion, Nullable, TreatWarningsAsErrors e la gestione centrale dei pacchetti del
+       repo (lezione T0.1), ne' un file che si trovasse sopra la cartella temporanea in cui li copia run.sh. Un consumatore
+       e' un progetto "da cliente": tutto cio' che gli serve e' scritto nel suo csproj. -->
+</Project>

@@ -57,3 +57,7 @@
 152-contacts-list-q	GET	/contacts?q=acme	200	application/json; charset=utf-8	12
 215-folders-list-after-delete	GET	/folders	200	application/json; charset=utf-8	12
 224-readyz-503-db-down	GET	/readyz	503	application/json; charset=utf-8	61
+301-contacts-page	GET	/contacts?limit=2	200	application/json; charset=utf-8	785
+302-contact-detail	GET	/contacts/con_01M40AM8YZQ7RVR7VDFNGZBNR9	200	application/json; charset=utf-8	460
+303-contact-categories	GET	/contact-categories	200	application/json; charset=utf-8	75
+304-doc-detail-without-content-with-contacts	GET	/documents/doc_01M40AM90G4B6DTDVDDSFSW7HR	200	application/json; charset=utf-8	578

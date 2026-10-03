@@ -1,0 +1,113 @@
+name: E2E
+
+# Suite live contro un Sharp-a-File REALE: l'immagine si costruisce dal Dockerfile del server al commit fissato qui sotto,
+# con SQL Server 2022 (eng/e2e/run-e2e.sh). Non e' un controllo delle pull request: gira a mano e ogni notte, e un
+# fallimento dice "il client e il server non si parlano piu' come prima" (deriva del contratto), non "la PR e' rotta".
+on:
+  workflow_dispatch:
+  schedule:
+    # Ogni notte alle 03:17 UTC (un minuto non tondo: meno coda sui runner).
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+# Due corse sullo stesso ref non si sovrappongono (ognuna ha il suo server, ma il notturno e uno a mano non servono insieme).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  # Il server di riferimento: Sharp-a-File ramo `dev` a questo commit (non il ramo mobile: una corsa deve essere
+  # ripetibile). `master`/v1.0.x non ha codici cartella, PATCH /folders, contatti, created_from/created_to, has_content.
+  # Da aggiornare quando Sharp-a-File pubblica un tag con queste funzioni: SHA del commit "peeled" con
+  # `git ls-remote https://github.com/Vinello28/Sharp-a-File.git 'refs/tags/<tag>^{}'`, mai scritto a mano.
+  SHARPAFILE_REPO: https://github.com/Vinello28/Sharp-a-File.git
+  SHARPAFILE_SHA: 8aec8bb78d34f70150cf7be970c4a712a9847546
+
+# `shell: bash` esplicito = `bash --noprofile --norc -eo pipefail` (senza, Linux usa solo `-e`).
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  live:
+    name: Suite live (Sharp-a-File reale)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Solo il commit fissato (fetch per SHA, profondita' 1), fuori dall'area di lavoro: il clone non si tocca,
+      # run-e2e.sh ne estrae una copia con `git archive`.
+      - name: Clona Sharp-a-File al commit fissato
+        run: |
+          src="$RUNNER_TEMP/sharp-a-file"
+          git init -q "$src"
+          git -C "$src" fetch -q --depth 1 "$SHARPAFILE_REPO" "$SHARPAFILE_SHA"
+          git -C "$src" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$src" rev-parse HEAD)" = "$SHARPAFILE_SHA"
+
+      # Come in ci.yml: SDK da global.json, `8.0.x` porta il runtime 8 per i test net8.0.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      # Costruisce l'immagine del server, avvia SQL Server 2022, migra, semina ente/chiavi/anagrafica (eng/e2e/seed.sh) e
+      # scrive FILEMASTER_E2E_* in $GITHUB_ENV (le chiavi sono mascherate nei log). La licenza di SQL Server la accetta
+      # chi lancia lo script: qui, questa riga.
+      - name: Avvia Sharp-a-File
+        id: server
+        env:
+          MSSQL_ACCEPT_EULA: "Y"
+        run: bash eng/e2e/run-e2e.sh --src "$RUNNER_TEMP/sharp-a-file" --ref "$SHARPAFILE_SHA"
+
+      # FILEMASTER_E2E_REQUIRED=1: senza FILEMASTER_E2E_URL i test live FALLISCONO invece di essere saltati (in ci.yml,
+      # dove la variabile manca, sono saltati). --minimum-expected-tests: un trait scritto male non passa in silenzio.
+      - name: Suite live (net10.0)
+        env:
+          FILEMASTER_E2E_REQUIRED: "1"
+        run: >-
+          dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net10.0 --no-build
+          --filter-trait "Category=Live" --minimum-expected-tests 1
+
+      # Gira anche se net10.0 e' fallito (stesso server): due esiti invece di uno.
+      - name: Suite live (net8.0)
+        if: ${{ !cancelled() && steps.server.outcome == 'success' }}
+        env:
+          FILEMASTER_E2E_REQUIRED: "1"
+        run: >-
+          dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net8.0 --no-build
+          --filter-trait "Category=Live" --minimum-expected-tests 1
+
+      - name: Log del server
+        if: ${{ failure() }}
+        run: bash eng/e2e/logs.sh "$RUNNER_TEMP/e2e-logs"
+
+      - name: Carica i log del server
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Sempre, anche dopo un fallimento o un annullamento: contenitori, volumi, rete e .e2e/ (segreti) via.
+      - name: Ferma Sharp-a-File
+        if: ${{ always() }}
+        run: bash eng/e2e/down.sh --purge

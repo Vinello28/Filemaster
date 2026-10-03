@@ -13,3 +13,5 @@ coverage*.xml
 *.nupkg
 *.snupkg
 .scratch/
+# Harness e2e (eng/e2e): segreti, chiavi e copie dei sorgenti di Sharp-a-File.
+.e2e/

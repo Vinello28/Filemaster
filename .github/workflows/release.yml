@@ -127,12 +127,12 @@ jobs:
             done
           done
 
-      # TODO(T6.1): il test non esiste ancora (vedi il commento dello stesso passo in ci.yml). Quando c'e', togliere
-      # --ignore-exit-code 8 e aggiungere --minimum-expected-tests 1.
+      # Upload da 200 MB contro il server di loopback, solo su net48 (vedi il commento dello stesso passo in ci.yml);
+      # --minimum-expected-tests 1 fa fallire il passo se il filtro non seleziona nessun test.
       - name: Test di memoria (upload da 200 MB, net48)
         run: >-
           dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net48 --no-build
-          --filter-trait "Category=Memory" --ignore-exit-code 8
+          --filter-trait "Category=Memory" --minimum-expected-tests 1
 
   pack:
     name: Pack

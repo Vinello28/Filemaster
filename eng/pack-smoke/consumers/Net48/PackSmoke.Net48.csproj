@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Consumatore .NET Framework 4.8 dei pacchetti Filemaster (asset netstandard2.0), come lo scriverebbe un cliente legacy.
+    NON impostare LangVersion: il default per net48 e' C# 7.3, ed e' proprio il cancello di questo progetto. Lo scenario
+    comune (../Shared/Smoke.cs) valorizza UploadDocumentRequest, DocumentQuery e FilemasterOptions con i setter: un `init`
+    o un `required` finito per sbaglio in un tipo di input rompe questo build (CS8370) su ogni sistema operativo.
+    Si compila ovunque (i reference assembly di net48 arrivano dal pacchetto implicito Microsoft.NETFramework.ReferenceAssemblies:
+    mai aggiungerne la versione), si esegue solo su Windows: lo decide eng/pack-smoke/run.sh.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>PackSmoke</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Filemaster" Version="[$(FilemasterVersion)]" />
+    <Compile Include="../Shared/*.cs" />
+  </ItemGroup>
+
+  <Target Name="RequireFilemasterVersion" BeforeTargets="Restore;CollectPackageReferences" Condition="'$(FilemasterVersion)' == ''">
+    <Error Text="Manca la versione dei pacchetti: costruire con -p:FilemasterVersion=&lt;versione&gt; (lo fa eng/pack-smoke/run.sh)." />
+  </Target>
+
+  <!-- Il cancello non deve sparire in silenzio: se qualcuno (o un Directory.Build.props) alza la versione del linguaggio, il
+       build si ferma qui invece di passare. -->
+  <Target Name="RequireCSharp73" BeforeTargets="CoreCompile">
+    <Error Condition="'$(LangVersion)' != '' And '$(LangVersion)' != '7.3' And '$(LangVersion)' != 'default'"
+           Text="Il consumatore net48 deve restare in C# 7.3 (LangVersion di default), trovato LangVersion='$(LangVersion)'." />
+  </Target>
+</Project>

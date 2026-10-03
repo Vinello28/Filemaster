@@ -8,8 +8,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Filemaster.Infrastructure;
 
 /// <summary>
-/// Il trasporto: l'unico punto che parla HTTP con il server. Riceve un <see cref="HttpClient"/> (che <b>non smaltisce</b> e di cui non
-/// modifica <c>BaseAddress</c>, intestazioni di default e <c>Timeout</c>: lo stesso client puo' essere condiviso) e le opzioni (gia'
+/// Il trasporto: l'unico punto che parla HTTP con il server. Riceve un <see cref="HttpClient"/>, o una sorgente che ne da' uno a ogni
+/// tentativo (<see cref="FromSource"/>, per <c>IHttpClientFactory</c>), che <b>non smaltisce</b> e di cui non
+/// modifica <c>BaseAddress</c>, intestazioni di default e <c>Timeout</c> (lo stesso client puo' essere condiviso), e le opzioni (gia'
 /// validate; ne tiene una copia). Gli adapter delle risorse gli chiedono "invia questa richiesta e dammi la risposta" in tre modalita'.
 /// </summary>
 /// <remarks>
@@ -24,7 +25,8 @@ namespace Filemaster.Infrastructure;
 /// </para>
 /// <para>
 /// <b>Intestazioni, per richiesta e mai sull'<c>HttpClient</c>:</b> <c>X-API-Key</c> (mai nei log, nelle eccezioni o in un
-/// <c>ToString</c>; si aggiunge senza validazione perche' un'eccezione di formato la riporterebbe), <c>X-Request-ID</c> (32 esadecimali
+/// <c>ToString</c>; si aggiunge senza validazione perche' un'eccezione di formato la riporterebbe; non si manda solo se la richiesta lo
+/// chiede con <see cref="TransportRequest.OmitApiKey"/>, cioe' alle sonde anonime), <c>X-Request-ID</c> (32 esadecimali
 /// minuscoli di un GUID: nell'alfabeto che il server tiene, quindi quello che torna e' quello inviato; <b>lo stesso</b> per tutti i
 /// tentativi di una chiamata) e <c>User-Agent</c> (<c>Filemaster/versione (runtime; sistema)</c>).
 /// </para>
@@ -39,7 +41,9 @@ namespace Filemaster.Infrastructure;
 /// <b>Ritentativi</b> (<see cref="RetryPolicy"/>): solo per i <c>GET</c>, solo su errori di rete, 408, 429 e 502/503/504 che non sono
 /// problem+json, solo prima di consegnare la risposta, mai su uno status che la richiesta dichiara atteso (il 503 di <c>/readyz</c>); un
 /// <see cref="HttpRequestMessage"/> nuovo a ogni tentativo; la risposta del tentativo fallito e' smaltita prima dell'attesa. La
-/// mappatura in eccezioni (<see cref="ProblemMapper"/>) avviene solo dopo il ciclo, sull'ultima risposta. Un 413 del limite del server web
+/// mappatura in eccezioni (<see cref="ProblemMapper"/>) avviene solo dopo il ciclo, sull'ultima risposta. Le richieste non <c>GET</c>
+/// senza corpo partono con un corpo vuoto, perche' il gestore di .NET non le rimandi da solo su una connessione chiusa prima della
+/// risposta (lo fa con le richieste senza contenuto); un <c>GET</c> invece puo' essere rimandato anche dal gestore, dentro un tentativo. Un 413 del limite del server web
 /// (che chiude la connessione) puo' arrivare come <see cref="ConnectionException"/>: non si distingue da un errore di rete.
 /// </para>
 /// <para>
@@ -60,7 +64,7 @@ internal sealed class FilemasterTransport
     private static readonly object RandomLock = new();
     private static readonly Random SharedRandom = new();
 
-    private readonly HttpClient _http;
+    private readonly Func<HttpClient> _httpClientSource;
     private readonly Uri _baseAddress;
     private readonly string _apiKey;
     private readonly TimeSpan _requestTimeout;
@@ -86,12 +90,25 @@ internal sealed class FilemasterTransport
         ILogger? logger = null,
         TimeProvider? timeProvider = null,
         TransportHooks? hooks = null)
+        : this(SourceOf(httpClient), options, logger, timeProvider, hooks)
     {
-        Guard.NotNull(httpClient);
+    }
+
+    // La forma usata dalla composizione con IHttpClientFactory: un HttpClient chiesto alla sorgente a OGNI tentativo (mai tenuto),
+    // cosi' la rotazione dei gestori della factory vale anche per un trasporto che vive quanto il processo. Privato perche' la
+    // chiamata con null del costruttore pubblico-interno non diventi ambigua; si raggiunge da FromSource.
+    private FilemasterTransport(
+        Func<HttpClient> httpClientSource,
+        FilemasterOptions options,
+        ILogger? logger,
+        TimeProvider? timeProvider,
+        TransportHooks? hooks)
+    {
+        Guard.NotNull(httpClientSource);
         Guard.NotNull(options);
         options.Validate();
 
-        _http = httpClient;
+        _httpClientSource = httpClientSource;
         _baseAddress = options.GetNormalizedBaseAddress();
         _apiKey = options.ApiKey!;
         _requestTimeout = options.RequestTimeout;
@@ -112,6 +129,23 @@ internal sealed class FilemasterTransport
                 _baseAddress.Host);
         }
     }
+
+    /// <summary>
+    /// Crea il trasporto su una <b>sorgente</b> di <see cref="HttpClient"/>: a ogni tentativo il trasporto chiede un client alla
+    /// sorgente e lo usa per quel solo invio, senza tenerlo ne' smaltirlo (e' il modello di <c>IHttpClientFactory.CreateClient</c>:
+    /// client economici, gestori condivisi e ruotati dalla factory). Per il resto come il costruttore con l'<see cref="HttpClient"/>.
+    /// </summary>
+    /// <param name="httpClientSource">Restituisce il client da usare; chiamata da piu' thread insieme, deve essere thread-safe.</param>
+    /// <param name="options">Le opzioni.</param>
+    /// <param name="logger">Dove scrivere gli avvisi; null per non scrivere.</param>
+    /// <param name="timeProvider">L'orologio; null per quello di sistema.</param>
+    /// <returns>Il trasporto.</returns>
+    internal static FilemasterTransport FromSource(
+        Func<HttpClient> httpClientSource,
+        FilemasterOptions options,
+        ILogger? logger = null,
+        TimeProvider? timeProvider = null) =>
+        new(httpClientSource, options, logger, timeProvider, hooks: null);
 
     /// <summary>
     /// Invia la richiesta e legge la risposta intera in memoria entro <see cref="FilemasterOptions.RequestTimeout"/> (tempo totale
@@ -310,7 +344,8 @@ internal sealed class FilemasterTransport
     private async Task<HttpResponseMessage> SendOnceAsync(TransportRequest request, string requestId, CancellationToken token)
     {
         using var message = CreateMessage(request, requestId);
-        return await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+        var http = _httpClientSource();
+        return await http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
     }
 
     // Un messaggio nuovo: un HttpRequestMessage non si reinvia. Le intestazioni si aggiungono senza validazione: la chiave e' gia'
@@ -320,10 +355,24 @@ internal sealed class FilemasterTransport
         var message = new HttpRequestMessage(request.Method, new Uri(_baseAddress, request.RelativeUri));
         try
         {
-            message.Headers.TryAddWithoutValidation(ApiKeyHeader, _apiKey);
+            if (!request.OmitApiKey)
+            {
+                message.Headers.TryAddWithoutValidation(ApiKeyHeader, _apiKey);
+            }
+
             message.Headers.TryAddWithoutValidation(RequestIdHeader, requestId);
             message.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
             request.Customize?.Invoke(message);
+
+            // Una richiesta non GET senza corpo riceve un corpo vuoto (Content-Length: 0). Il gestore di .NET (SocketsHttpHandler,
+            // misurato su .NET 8 e 10 in T6.1) rimanda da solo, fino a 3 volte e anche su connessioni nuove, una richiesta SENZA
+            // contenuto quando la connessione si chiude prima del primo byte di risposta: per un DELETE o una verifica gia' eseguiti dal
+            // server sarebbe un secondo invio. Con un contenuto, anche vuoto, non la rimanda: "mai ritentate" vale anche sul filo.
+            if (request.Method != HttpMethod.Get && message.Content is null)
+            {
+                message.Content = new ByteArrayContent(Array.Empty<byte>());
+            }
+
             return message;
         }
         catch
@@ -402,6 +451,12 @@ internal sealed class FilemasterTransport
                 exception,
                 requestId);
         }
+    }
+
+    private static Func<HttpClient> SourceOf(HttpClient httpClient)
+    {
+        Guard.NotNull(httpClient);
+        return () => httpClient;
     }
 
     private static string? HeaderRequestId(HttpResponseMessage response) =>

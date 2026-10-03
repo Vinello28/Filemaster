@@ -21,7 +21,10 @@
     <ProjectReference Include="..\Filemaster.Domain\Filemaster.Domain.csproj" />
   </ItemGroup>
 
+  <!-- Filemaster (la composizione con IHttpClientFactory) usa la composizione interna su una sorgente di client: i quattro pacchetti
+       si dipendono con versioni esatte [x.y.z], quindi un membro interno non puo' arrivare da una versione diversa. -->
   <ItemGroup>
+    <InternalsVisibleTo Include="Filemaster" />
     <InternalsVisibleTo Include="Filemaster.UnitTests" />
   </ItemGroup>
 </Project>

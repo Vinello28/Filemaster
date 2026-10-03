@@ -29,9 +29,9 @@ namespace Filemaster.Domain;
 /// <item><description>409 <c>content-unavailable</c> (documento importato con i soli metadati): <see cref="ContentUnavailableException"/>. Ha lo stesso status del conflitto: si distingue solo per slug.</description></item>
 /// <item><description>413 <c>request-too-large</c> (due percorsi: limite dello store e limite del server web, che chiude la connessione): <see cref="RequestTooLargeException"/>.</description></item>
 /// <item><description>415 qualunque slug (<c>unsupported-media-type</c>, ma anche <c>error</c> e <c>validation-error</c> quando manca o e' sbagliato il Content-Type): <see cref="UnsupportedMediaTypeException"/>.</description></item>
-/// <item><description>500 <c>internal-error</c>, ogni altro 5xx e i 502/503/504 che non sono problem+json: <see cref="ServerErrorException"/>.</description></item>
+/// <item><description>500 <c>internal-error</c>, ogni altro 5xx (anche con slug <c>error</c>) e i 502/503/504 che non sono problem+json: <see cref="ServerErrorException"/>.</description></item>
 /// <item><description>503 <c>storage-not-configured</c> (password dell'archivio non impostata): <see cref="StorageNotConfiguredException"/>.</description></item>
-/// <item><description>405 <c>method-not-allowed</c>, 416 senza corpo, slug <c>error</c> con altri status, qualunque status non previsto, e una risposta di successo non interpretabile (JSON non valido, campo mancante): <see cref="UnexpectedResponseException"/>.</description></item>
+/// <item><description>405 <c>method-not-allowed</c>, 416 senza corpo, slug <c>error</c> con uno status che non e' 5xx ne' 415, qualunque status non previsto, e una risposta di successo non interpretabile (JSON non valido, campo mancante): <see cref="UnexpectedResponseException"/>.</description></item>
 /// <item><description>Nessuna risposta (<see cref="StatusCode"/> 0): <see cref="ConnectionException"/> per rete, DNS o connessione interrotta, <see cref="FilemasterTimeoutException"/> per il tempo scaduto.</description></item>
 /// <item><description>Download troncato o con hash diverso dal previsto, a risposta 200 o 206 gia' arrivata: <see cref="ContentIntegrityException"/>.</description></item>
 /// </list>
