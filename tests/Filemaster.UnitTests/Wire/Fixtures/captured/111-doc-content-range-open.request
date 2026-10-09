@@ -1,4 +1,4 @@
-GET /documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/content
+GET /documents/30017/content
 # auth: X-API-Key (scope read)
 # curl: -H
 # curl: Range: bytes=5-

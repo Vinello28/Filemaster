@@ -6,13 +6,13 @@ using Filemaster.Domain;
 namespace Filemaster.UnitTests.Application;
 
 /// <summary>
-/// <see cref="DocumentQuery"/>: i filtri di <c>GET /documents</c> del server dev, tutti e soli. Qui si prova la validazione:
+/// <see cref="DocumentQuery"/>: i filtri di <c>GET /documents</c> del server, tutti e soli. Qui si prova la validazione:
 /// id e codici vuoti, l'intervallo di date (<c>created_from</c> deve precedere <c>created_to</c>) e il filtro sui
 /// metadati con i limiti esatti del server (oggetto JSON, 64 KiB, al massimo 64 valori e 16 livelli).
 /// </summary>
 public sealed class DocumentQueryTests
 {
-    private const string ContactIdText = "con_01M3VEESG5KBYR5PYAJ0TDT4B2";
+    private const string ContactIdText = "7001";
 
     private static JsonElement Json(string text)
     {
@@ -84,7 +84,7 @@ public sealed class DocumentQueryTests
         query.Sender = "Acme";
         query.Recipient = "Beta";
         query.SenderId = new ContactId(ContactIdText);
-        query.RecipientId = new ContactId(ContactIdText);
+        query.RecipientId = new ContactId("7002");
         query.Text = "acme";
         query.MetadataText = "X";
         query.Metadata = Json("""{"arxivar":{"docnumber":12345}}""");

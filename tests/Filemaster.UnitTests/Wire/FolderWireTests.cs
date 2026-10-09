@@ -18,26 +18,26 @@ public sealed class FolderWireTests
     [Fact]
     public void A_top_level_folder_is_read_from_the_captured_creation_response()
     {
-        // 21-folders-create-parent: {"id":"FATTURE","name":"Fatture","created_at":"2026-10-01T09:59:12.9531Z"}
+        // 21-folders-create-parent: {"id":"FATTURE","name":"Fatture","created_at":"2026-10-09T11:11:05.821785Z"}
         var folder = Read(WireFixtures.Captured("21-folders-create-parent"));
 
         Assert.Equal(new FolderCode("FATTURE"), folder.Id);
         Assert.Null(folder.ParentId);
         Assert.Equal("Fatture", folder.Name);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 12, 9531000), folder.CreatedAt);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 5, 8217850), folder.CreatedAt);
         Assert.Equal(TimeSpan.Zero, folder.CreatedAt.Offset);
     }
 
     [Fact]
     public void A_child_folder_has_its_parent_code()
     {
-        // 22-folders-create-child: {"id":"FATTURE.2026","parent_id":"FATTURE","name":"Fatture 2026","created_at":"2026-10-01T09:59:13.109706Z"}
+        // 22-folders-create-child: {"id":"FATTURE.2026","parent_id":"FATTURE","name":"Fatture 2026","created_at":"2026-10-09T11:11:05.907681Z"}
         var folder = Read(WireFixtures.Captured("22-folders-create-child"));
 
         Assert.Equal(new FolderCode("FATTURE.2026"), folder.Id);
         Assert.Equal(new FolderCode("FATTURE"), folder.ParentId);
         Assert.Equal("Fatture 2026", folder.Name);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 13, 1097060), folder.CreatedAt);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 5, 9076810), folder.CreatedAt);
     }
 
     [Fact]
@@ -52,19 +52,19 @@ public sealed class FolderWireTests
         Assert.Equal(new FolderCode("FATTURE.2027"), recoded.Id);
         Assert.Equal("Fatture 2027", recoded.Name);
         Assert.Equal(new FolderCode("FATTURE"), recoded.ParentId);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 13, 1097060), recoded.CreatedAt); // la data di creazione non cambia
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 5, 9076810), recoded.CreatedAt); // la data di creazione non cambia
     }
 
     [Fact]
     public void The_captured_root_listing_has_two_folders_in_the_server_order()
     {
-        // 24-folders-list: CHARSET (09:59:13.192279Z), FATTURE (09:59:12.9531Z): l'ordine e' quello del server (per nome), non per data.
+        // 24-folders-list: CHARSET (11:11:05.991505Z), FATTURE (11:11:05.821785Z): l'ordine e' quello del server (per nome), non per data.
         var folders = ReadList(WireFixtures.Captured("24-folders-list"));
 
         Assert.Equal(2, folders.Count);
         Assert.Equal(new FolderCode("CHARSET"), folders[0].Id);
         Assert.Equal("Charset", folders[0].Name);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 13, 1922790), folders[0].CreatedAt);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 5, 9915050), folders[0].CreatedAt);
         Assert.Equal(new FolderCode("FATTURE"), folders[1].Id);
         Assert.All(folders, f => Assert.Null(f.ParentId));
     }
@@ -151,7 +151,7 @@ public sealed class FolderWireTests
     }
 
     [Fact]
-    public void A_server_master_folder_id_with_the_fld_prefix_is_a_valid_code()
+    public void A_legacy_folder_id_with_the_fld_prefix_is_still_a_valid_code()
     {
         var folder = Read(Variants.With(Child(), "id", "\"fld_01M3VEESG5KBYR5PYAJ0TDT4B2\""));
 

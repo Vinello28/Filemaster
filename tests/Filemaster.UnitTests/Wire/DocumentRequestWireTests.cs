@@ -15,7 +15,7 @@ namespace Filemaster.UnitTests.Wire;
 /// </summary>
 public sealed class DocumentRequestWireTests
 {
-    private const string Cursor = "djF8MTc5MDg0ODc1NjM1MDEzNnxkb2NfMDFNM1ZFRVRLWTdHOVFNWkhWNERQUTNRQ1Y";
+    private const string Cursor = "djF8MTc5MTU0NDI2OTA3NjQzMnwzMDAyOA";
 
     private static string List(DocumentQuery? query = null, PageRequest? page = null) => DocumentWire.ListPath(query, page);
 
@@ -51,12 +51,21 @@ public sealed class DocumentRequestWireTests
     }
 
     [Fact]
+    public void The_captured_contact_id_filters_are_reproduced_with_the_canonical_decimal_id()
+    {
+        // 265/266: sender_id=1 e recipient_id=1 (il contatto e' un intero: la query lo vuole in decimale canonico, mai 001 ne' +1).
+        Assert.Equal(Captured("265-docs-list-filter-sender-id"), List(new DocumentQuery { SenderId = new ContactId("1") }));
+        Assert.Equal(Captured("266-docs-list-filter-recipient-id"), List(new DocumentQuery { RecipientId = new ContactId("1") }));
+        Assert.Equal(Captured("265-docs-list-filter-sender-id"), List(new DocumentQuery { SenderId = ContactId.From(1) }));
+    }
+
+    [Fact]
     public void The_captured_page_requests_are_reproduced_exactly()
     {
         Assert.Equal(Captured("71-docs-list-limit1-page1"), List(page: new PageRequest(limit: 1)));
         Assert.Equal(Captured("72-docs-list-limit1-page2"), List(page: new PageRequest(Cursor, 1)));
-        Assert.Equal(Captured("73-docs-list-last-page-exact"), List(page: new PageRequest(limit: 12)));
-        Assert.Equal(Captured("75-docs-list-last-page-cursor"), List(page: new PageRequest(CursorOf("75-docs-list-last-page-cursor"), 11)));
+        Assert.Equal(Captured("73-docs-list-last-page-exact"), List(page: new PageRequest(limit: 13)));
+        Assert.Equal(Captured("75-docs-list-last-page-cursor"), List(page: new PageRequest(CursorOf("75-docs-list-last-page-cursor"), 12)));
     }
 
     private static string Captured(string name) => WireFixtures.RequestPath(name).TrimStart('/');
@@ -91,8 +100,8 @@ public sealed class DocumentRequestWireTests
             FileName = "fattura 2026.pdf",
             Sender = "Acme Srl",
             Recipient = "Beta Spa",
-            SenderId = new ContactId("con_01M3VEF0K9Z8X7Y6W5V4T3S2R1"),
-            RecipientId = new ContactId("con_01M3VEF0P1Q2R3S4T5V6W7X8Y9"),
+            SenderId = new ContactId("41"),
+            RecipientId = new ContactId("2147483647"),
             Text = "perch\U000000E9 &",
             MetadataText = "X=1",
             Metadata = Json("{\"arxivar\":{\"docnumber\":12345}}"),
@@ -104,7 +113,7 @@ public sealed class DocumentRequestWireTests
 
         Assert.Equal(
             "documents?folder_id=FATTURE&owner=maria&tag=fattura&filename=fattura%202026.pdf&sender=Acme%20Srl&recipient=Beta%20Spa" +
-            "&sender_id=con_01M3VEF0K9Z8X7Y6W5V4T3S2R1&recipient_id=con_01M3VEF0P1Q2R3S4T5V6W7X8Y9&q=perch%C3%A9%20%26&metadata_query=X%3D1" +
+            "&sender_id=41&recipient_id=2147483647&q=perch%C3%A9%20%26&metadata_query=X%3D1" +
             "&metadata=%7B%22arxivar%22%3A%7B%22docnumber%22%3A12345%7D%7D&created_from=2026-01-01T00%3A00%3A00Z&created_to=2026-12-31T10%3A00%3A00Z" +
             "&limit=50&cursor=" + Cursor,
             path);
@@ -128,8 +137,8 @@ public sealed class DocumentRequestWireTests
         { "filename", "documents?filename=a%26b.pdf" },
         { "sender", "documents?sender=x%2By" },
         { "recipient", "documents?recipient=100%25" },
-        { "sender_id", "documents?sender_id=con_01M3VEF0K9Z8X7Y6W5V4T3S2R1" },
-        { "recipient_id", "documents?recipient_id=con_01M3VEF0P1Q2R3S4T5V6W7X8Y9" },
+        { "sender_id", "documents?sender_id=41" },
+        { "recipient_id", "documents?recipient_id=2147483647" },
         { "q", "documents?q=a%3Db" },
         { "metadata_query", "documents?metadata_query=%22x%22" },
     };
@@ -147,8 +156,8 @@ public sealed class DocumentRequestWireTests
             case "filename": query.FileName = "a&b.pdf"; break;
             case "sender": query.Sender = "x+y"; break;
             case "recipient": query.Recipient = "100%"; break;
-            case "sender_id": query.SenderId = new ContactId("con_01M3VEF0K9Z8X7Y6W5V4T3S2R1"); break;
-            case "recipient_id": query.RecipientId = new ContactId("con_01M3VEF0P1Q2R3S4T5V6W7X8Y9"); break;
+            case "sender_id": query.SenderId = new ContactId("41"); break;
+            case "recipient_id": query.RecipientId = new ContactId("2147483647"); break;
             case "q": query.Text = "a=b"; break;
             case "metadata_query": query.MetadataText = "\"x\""; break;
             default: throw new InvalidOperationException(name);
@@ -345,8 +354,8 @@ public sealed class DocumentRequestWireTests
 
     private static string Text(byte[] body) => new UTF8Encoding(false, true).GetString(body);
 
-    private static readonly DocumentId One = new("doc_01M3VEESPZ9C3HMABKJ9X24PAS");
-    private static readonly DocumentId Two = new("doc_01M3VEESSR30BNB50JNTGF31D8");
+    private static readonly DocumentId One = new("30019");
+    private static readonly DocumentId Two = new("30020");
 
     [Fact]
     public void The_move_body_is_exactly_the_one_the_server_accepted_in_the_captures()
@@ -382,17 +391,18 @@ public sealed class DocumentRequestWireTests
         Assert.Equal(WireFixtures.RequestBody("133-docs-bulk-move"), Text(DocumentWire.BulkMoveBody(new[] { One, Two }, new FolderCode("FATTURE.2027"))));
         Assert.Equal(WireFixtures.RequestBody("134-docs-bulk-move-to-root"), Text(DocumentWire.BulkMoveBody(new[] { One }, null)));
         Assert.Equal(
-            "{\"document_ids\":[\"doc_01M3VEESPZ9C3HMABKJ9X24PAS\",\"doc_01M3VEESSR30BNB50JNTGF31D8\"],\"folder_id\":\"FATTURE.2027\"}",
+            "{\"document_ids\":[30019,30020],\"folder_id\":\"FATTURE.2027\"}",
             Text(DocumentWire.BulkMoveBody(new[] { One, Two }, new FolderCode("FATTURE.2027"))));
     }
 
     [Fact]
     public void The_bulk_verify_body_is_exactly_the_one_the_server_accepted_in_the_capture()
     {
-        // 129: {"document_ids":["doc_01M3VEESG5KBYR5PYAJ0TDT4B2","doc_01M3VEESPZ9C3HMABKJ9X24PAS"]}
-        var ids = new[] { new DocumentId("doc_01M3VEESG5KBYR5PYAJ0TDT4B2"), One };
+        // 129: {"document_ids":[30017,30019]}
+        var ids = new[] { new DocumentId("30017"), One };
 
         Assert.Equal(WireFixtures.RequestBody("129-docs-bulk-verify"), Text(DocumentWire.BulkVerifyBody(ids)));
+        Assert.Equal("{\"document_ids\":[30017,30019]}", Text(DocumentWire.BulkVerifyBody(ids)));
     }
 
     [Fact]
@@ -400,13 +410,28 @@ public sealed class DocumentRequestWireTests
     {
         var body = Text(DocumentWire.BulkVerifyBody(new[] { Two, One, Two }));
 
-        Assert.Equal("{\"document_ids\":[\"doc_01M3VEESSR30BNB50JNTGF31D8\",\"doc_01M3VEESPZ9C3HMABKJ9X24PAS\",\"doc_01M3VEESSR30BNB50JNTGF31D8\"]}", body);
+        Assert.Equal("{\"document_ids\":[30020,30019,30020]}", body);
+    }
+
+    [Fact]
+    public void The_ids_are_written_as_bare_json_numbers_never_as_strings()
+    {
+        var ids = new[] { DocumentId.From(1), DocumentId.From(2147483648L), DocumentId.From(9007199254740993L), DocumentId.From(long.MaxValue) };
+
+        var verify = Text(DocumentWire.BulkVerifyBody(ids));
+        var move = Text(DocumentWire.BulkMoveBody(ids, new FolderCode("FATTURE.2027")));
+
+        Assert.Equal("{\"document_ids\":[1,2147483648,9007199254740993,9223372036854775807]}", verify);
+        Assert.Equal("{\"document_ids\":[1,2147483648,9007199254740993,9223372036854775807],\"folder_id\":\"FATTURE.2027\"}", move);
+        using var document = JsonDocument.Parse(verify);
+        Assert.All(document.RootElement.GetProperty("document_ids").EnumerateArray(), id => Assert.Equal(JsonValueKind.Number, id.ValueKind));
+        Assert.Equal(9007199254740993L, document.RootElement.GetProperty("document_ids")[2].GetInt64());
     }
 
     [Fact]
     public void A_very_large_batch_is_written_whole()
     {
-        var ids = Enumerable.Range(0, 30_000).Select(i => new DocumentId("doc_" + new string('0', 21) + i.ToString("D5", CultureInfo.InvariantCulture))).ToArray();
+        var ids = Enumerable.Range(0, 30_000).Select(i => DocumentId.From(i + 1L)).ToArray();
 
         var body = DocumentWire.BulkVerifyBody(ids);
 

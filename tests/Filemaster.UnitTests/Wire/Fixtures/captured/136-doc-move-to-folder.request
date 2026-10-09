@@ -1,4 +1,4 @@
-PATCH /documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/folder
+PATCH /documents/30017/folder
 # auth: X-API-Key (scope write)
 # curl: -H
 # curl: Content-Type: application/json

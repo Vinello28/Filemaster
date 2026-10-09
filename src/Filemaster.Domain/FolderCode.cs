@@ -15,7 +15,8 @@ namespace Filemaster.Domain;
 /// "aggiustato" in silenzio. Ogni altro input ha lo stesso esito del server (verificato su tutto l'intervallo BMP).
 /// </para>
 /// <para>
-/// Un id di cartella del ramo <c>master</c> del server (<c>fld_</c> + ULID, 30 caratteri) e' un codice valido, senza
+/// Le cartelle restano identificate da un codice scelto dall'utente (a differenza di documenti, contatti ed enti, che
+/// hanno id numerici). Un vecchio id di cartella <c>fld_</c> + ULID (30 caratteri) e' un codice valido, senza
 /// trattamenti speciali.
 /// </para>
 /// <para>

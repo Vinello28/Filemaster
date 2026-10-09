@@ -40,7 +40,8 @@ public sealed class LiveDocumentTests
 
             Assert.False(uploaded.Deduplicated);
             var document = uploaded.Document;
-            Assert.True(DocumentId.IsValid(document.Id.Value));
+            Assert.False(document.Id.IsEmpty);
+            Assert.True(document.Id.Number >= 1);
             Assert.Equal(folder, document.FolderId);
             Assert.Equal("fattura-e2e.pdf", document.OriginalFilename);
             Assert.Equal("application/pdf", document.MimeType);
@@ -162,7 +163,7 @@ public sealed class LiveDocumentTests
         await LiveCleanup.WithCleanupAsync(client, async cleanup =>
         {
             var folder = UniqueFolder("MOVE");
-            await client.Folders.CreateAsync(new CreateFolderRequest(folder, "Spostamenti"), Ct);
+            await client.Folders.CreateAsync(new CreateFolderRequest(folder, "Spostamenti " + RunId), Ct);
             cleanup.Folder(folder);
             var uploaded = await UploadAsync(client, cleanup, UniqueBytes(1_000), "sposta.pdf");
             Assert.Null(uploaded.Document.FolderId);
@@ -195,13 +196,13 @@ public sealed class LiveDocumentTests
                 r.Tag = "beta";
                 r.Metadata = lotto.RootElement;
             });
-            var expected = new[] { a.Document.Id, b.Document.Id, c.Document.Id }.OrderBy(id => id.Value, StringComparer.Ordinal).ToArray();
+            var expected = Numbers(new[] { a.Document.Id, b.Document.Id, c.Document.Id });
 
             var byOwner = await client.Documents.ListAsync(new DocumentQuery { Owner = owner }, cancellationToken: Ct);
-            Assert.Equal(expected, Sorted(byOwner.Items));
+            Assert.Equal(expected, Numbers(byOwner.Items));
 
             var byTag = await client.Documents.ListAsync(new DocumentQuery { Owner = owner, Tag = "beta" }, cancellationToken: Ct);
-            Assert.Equal(new[] { b.Document.Id, c.Document.Id }.OrderBy(id => id.Value, StringComparer.Ordinal), Sorted(byTag.Items));
+            Assert.Equal(Numbers(new[] { b.Document.Id, c.Document.Id }), Numbers(byTag.Items));
 
             var byMetadata = await client.Documents.ListAsync(new DocumentQuery { Metadata = lotto.RootElement }, cancellationToken: Ct);
             Assert.Equal(c.Document.Id, Assert.Single(byMetadata.Items).Id);
@@ -214,7 +215,7 @@ public sealed class LiveDocumentTests
                     CreatedBefore = DateTimeOffset.UtcNow.AddHours(1),
                 },
                 cancellationToken: Ct);
-            Assert.Equal(expected, Sorted(byTime.Items));
+            Assert.Equal(expected, Numbers(byTime.Items));
             var future = await client.Documents.ListAsync(
                 new DocumentQuery { Owner = owner, CreatedFrom = DateTimeOffset.UtcNow.AddHours(1) },
                 cancellationToken: Ct);
@@ -233,7 +234,7 @@ public sealed class LiveDocumentTests
                 enumerated.Add(document);
             }
 
-            Assert.Equal(expected, Sorted(enumerated));
+            Assert.Equal(expected, Numbers(enumerated));
         });
     }
 
@@ -244,7 +245,7 @@ public sealed class LiveDocumentTests
         await LiveCleanup.WithCleanupAsync(client, async cleanup =>
         {
             var folder = UniqueFolder("BULK");
-            await client.Folders.CreateAsync(new CreateFolderRequest(folder, "Lotto"), Ct);
+            await client.Folders.CreateAsync(new CreateFolderRequest(folder, "Lotto " + RunId), Ct);
             cleanup.Folder(folder);
             var a = await UploadAsync(client, cleanup, UniqueBytes(800), "uno.pdf");
             var b = await UploadAsync(client, cleanup, UniqueBytes(900), "due.pdf");
@@ -252,7 +253,7 @@ public sealed class LiveDocumentTests
 
             Assert.Equal(2, await client.Documents.MoveManyAsync(ids, folder, Ct));
             var inFolder = await client.Documents.ListAsync(new DocumentQuery { FolderId = folder }, cancellationToken: Ct);
-            Assert.Equal(ids.OrderBy(id => id.Value, StringComparer.Ordinal), Sorted(inFolder.Items));
+            Assert.Equal(Numbers(ids), Numbers(inFolder.Items));
 
             var result = await client.Documents.VerifyManyAsync(ids, Ct);
             Assert.Equal(2, result.Total);
@@ -261,7 +262,7 @@ public sealed class LiveDocumentTests
             Assert.Equal(0, result.WithoutContent);
 
             // Un id sconosciuto: move lo ignora (conta solo i documenti spostati), verify rifiuta l'intero lotto con 404.
-            var unknown = new DocumentId("doc_00000000000000000000000000");
+            var unknown = DocumentId.From(long.MaxValue);
             Assert.Equal(2, await client.Documents.MoveManyAsync(new[] { a.Document.Id, b.Document.Id, unknown }, null, Ct));
             Assert.Empty((await client.Documents.ListAsync(new DocumentQuery { FolderId = folder }, cancellationToken: Ct)).Items);
             await Assert.ThrowsAsync<NotFoundException>(() => client.Documents.VerifyManyAsync(new[] { a.Document.Id, unknown }, Ct));
@@ -355,7 +356,4 @@ public sealed class LiveDocumentTests
                 error.GetType().Name + ": " + error.Message);
         });
     }
-
-    private static DocumentId[] Sorted(IEnumerable<Document> documents) =>
-        documents.Select(d => d.Id).OrderBy(id => id.Value, StringComparer.Ordinal).ToArray();
 }

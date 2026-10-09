@@ -90,7 +90,7 @@ internal static class Composed
 {
     internal const string Key = TransportRig.Key;
 
-    internal const string TenantJson = """{"id":"ten_01M3VCWS5PAKMSC47JNJ1PTFJQ","slug":"acme-test","name":"Acme Test","status":"active","created_at":"2026-10-01T09:59:09.501341Z"}""";
+    internal const string TenantJson = """{"id":1,"slug":"acme-test","name":"Acme Test","status":"active","created_at":"2026-10-09T10:58:55.123456Z"}""";
 
     internal const string TransportCategory = "Filemaster.Infrastructure.FilemasterTransport";
 

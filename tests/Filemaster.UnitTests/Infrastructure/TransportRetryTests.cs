@@ -303,7 +303,7 @@ public sealed class TransportRetryTests
             using var rig = new TransportRig();
             rig.Handler.Then(Reply.Text(status)).Then(Reply.Json(200, "{}"));
 
-            await Assert.ThrowsAnyAsync<FilemasterException>(() => rig.Transport.SendBufferedAsync(new TransportRequest(new HttpMethod(method), "documents/doc_X"), default));
+            await Assert.ThrowsAnyAsync<FilemasterException>(() => rig.Transport.SendBufferedAsync(new TransportRequest(new HttpMethod(method), "documents/42"), default));
 
             Assert.Single(rig.Handler.Requests);
             Assert.Empty(rig.Delays.Delays);
@@ -319,7 +319,7 @@ public sealed class TransportRetryTests
         using var rig = new TransportRig();
         rig.Handler.ThenFail(new HttpRequestException("rete")).Then(Reply.Json(200, "{}"));
 
-        await Assert.ThrowsAsync<ConnectionException>(() => rig.Transport.SendBufferedAsync(new TransportRequest(new HttpMethod(method), "documents/doc_X"), default));
+        await Assert.ThrowsAsync<ConnectionException>(() => rig.Transport.SendBufferedAsync(new TransportRequest(new HttpMethod(method), "documents/42"), default));
 
         Assert.Single(rig.Handler.Requests);
         Assert.Empty(rig.Delays.Delays);
@@ -333,8 +333,8 @@ public sealed class TransportRetryTests
         using var dropped = new TransportRig();
         dropped.Handler.ThenFail(new HttpRequestException("rete")).Then(Reply.Bytes(200, new byte[3], 3));
 
-        await Assert.ThrowsAsync<ServerErrorException>(() => transient.Transport.SendDownloadAsync(TransportRig.Post("documents/doc_X/content"), default));
-        await Assert.ThrowsAsync<ConnectionException>(() => dropped.Transport.SendDownloadAsync(TransportRig.Post("documents/doc_X/content"), default));
+        await Assert.ThrowsAsync<ServerErrorException>(() => transient.Transport.SendDownloadAsync(TransportRig.Post("documents/42/content"), default));
+        await Assert.ThrowsAsync<ConnectionException>(() => dropped.Transport.SendDownloadAsync(TransportRig.Post("documents/42/content"), default));
 
         Assert.Single(transient.Handler.Requests);
         Assert.Single(dropped.Handler.Requests);

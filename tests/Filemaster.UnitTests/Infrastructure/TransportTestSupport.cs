@@ -275,9 +275,9 @@ internal sealed class TransportRig : IDisposable
 
     internal static TransportRequest Post(string relative = "documents/bulk/move") => new(HttpMethod.Post, relative);
 
-    internal static TransportRequest Delete(string relative = "documents/doc_X") => new(HttpMethod.Delete, relative);
+    internal static TransportRequest Delete(string relative = "documents/42") => new(HttpMethod.Delete, relative);
 
-    internal static TransportRequest Patch(string relative = "documents/doc_X/folder") => new(new HttpMethod("PATCH"), relative);
+    internal static TransportRequest Patch(string relative = "documents/42/folder") => new(new HttpMethod("PATCH"), relative);
 
     public void Dispose() => Client.Dispose();
 }

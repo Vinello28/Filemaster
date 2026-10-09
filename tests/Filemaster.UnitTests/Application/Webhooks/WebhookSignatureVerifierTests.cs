@@ -14,13 +14,13 @@ namespace Filemaster.UnitTests.Application.Webhooks;
 
 /// <summary>
 /// Il verificatore della firma dei webhook contro vettori calcolati da <b>openssl</b>, non dal verificatore stesso (test non
-/// circolari). Il formato e' quello che emette il server (Sharp-a-File, ramo dev, <c>WebhookSignature.Sign</c>): header
+/// circolari). Il formato e' quello che emette il server (Sharp-a-File, master 541f378, <c>WebhookSignature.Sign</c>): header
 /// <c>t=&lt;secondi&gt;,v1=&lt;hex&gt;</c>, chiave HMAC-SHA256 = UTF-8 dell'intero segreto con <c>whsec_</c>, messaggio =
 /// <c>"&lt;t&gt;."</c> + byte grezzi del corpo.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Come sono stati calcolati i vettori</b> (OpenSSL 3.6.5, il 2026-10-02). I corpi sono file (<c>bodyA</c>, <c>bodyB</c>,
+/// <b>Come sono stati calcolati i vettori</b> (OpenSSL 3.6.5, ricalcolati il 2026-10-09 dopo il passaggio agli id numerici). I corpi sono file (<c>bodyA</c>, <c>bodyB</c>,
 /// <c>bodyC</c>, <c>bodyEmpty</c>, <c>bodyBom</c>) scritti da uno script Python dagli stessi byte di questo file; il messaggio e'
 /// il prefisso <c>t.</c> seguito dal file, e la firma e':
 /// <code>
@@ -48,48 +48,48 @@ public sealed class WebhookSignatureVerifierTests
     private const string Backslash = "\U0000005C";
 
     // Corpo A, secret = Secret, t = 1700000000 (comandi nel commento della classe).
-    internal const string SigA = "b8a86bf2187f78a172dbcee940c8f5d80fc2f7d39fec093693d44f3bb666deea";
+    internal const string SigA = "f7ea1f6c7bb27d89ad338650f1eb13d85539d336629e948be769e8597888bd9a";
 
     // Corpo A, ma con OtherSecret ("whsec_AnotherFakeSecretTestVectorOnly45"): una firma valida di un altro segreto.
-    private const string SigAWithOtherSecret = "c97b853b23bbd113e1dfbaff07715d7d367dffd69fe7ff22c5155849c977763b";
+    private const string SigAWithOtherSecret = "8e1941c9139ce6e0179a6532cd0b2f8459303e02a0c3fd15401b59059bb1bbc1";
 
     // Corpo A, chiave = il segreto SENZA il prefisso 'whsec_' ("NotARealSecretTestVectorOnly0123"), t = 1700000000.
     //   { printf '%s.' 1700000000; cat bodyA; } > msg; openssl dgst -sha256 -hmac 'NotARealSecretTestVectorOnly0123' -hex msg
-    private const string SigAWithoutPrefixKey = "0d1d40b006513130d4cd67c360fa14873983824afc6fe4ee7c14790c695afb8f";
+    private const string SigAWithoutPrefixKey = "6a09529a3ea4a1435506940c87da9f87d40776730d752961400db117141c61d5";
 
     // Corpo A firmato con t = 1700000300 (un altro istante, stesso corpo): serve ai casi con due 't'.
-    private const string SigAAtOtherTime = "788df0070f7c8d5d9b7525fe6cdbdff74af368d38c77268b56bb6950fe771d67";
+    private const string SigAAtOtherTime = "8fc5d5622f2995b88df5ab94b93bfa1386f902f08ef580d5ac3f3eab44adb41e";
 
     // Corpo A con t = 0 e con t = 9223372036854775807 (long.MaxValue): firme valide di istanti fuori da ogni finestra.
-    private const string SigAAtEpoch = "66b4df0b15ba38a35933537489ea5ba0236f68d9ee57dda565a7144c7501319e";
-    private const string SigAAtLongMax = "d0a40746d1e7df687f6cd734034703d7651eb852182e776c8005a28a222e5782";
+    private const string SigAAtEpoch = "12848ae9635f3b431cbd105777e52e5696ccf476e1911d91af1021307eadbcba";
+    private const string SigAAtLongMax = "04e2dc15931a2e07235c9a0d82267b38b8862a026bb786a95b4d5a26d0086c92";
 
     // Corpo A con il testo di t = "01700000000" (zeri iniziali): { printf '%s.' 01700000000; cat bodyA; } > msg
-    private const string SigAWithZeroPaddedT = "927d16dd26d5bf164aa48bda98702aaa45f7af6174b510a03a3f2217b9152042";
+    private const string SigAWithZeroPaddedT = "afa299d0a6dc87f6c1ecbe366fa575b9fd0c8a519dd71ade2a690e5b6c3ee31d";
 
     // Corpo B (UTF-8 non ASCII, CRLF, a capo finale), C (byte non UTF-8), vuoto e con BOM: Secret, t = 1700000000.
-    private const string SigB = "37e990b1aa5b3a4aa7275f00d11e7e0f53aed371f092fb5c6098045027fdbb3e";
+    private const string SigB = "dba9b850965959037377fffe382f1f9346aa80f8d48942c845643a456a50770a";
     private const string SigC = "32f9da36f8013e632f6b3a4102c454955acd6ac22257cdb3cf302cc70ed0607d";
     private const string SigEmpty = "4700f54fee702fb6e458849ac5619789f6ca5e880b234c0daa4fd3a2e42a712a";
-    private const string SigBom = "fa6ad9df2fbba3272064959ce8bbe0d381a0b8413b2e780d5dbfbddcce3bde8f";
+    private const string SigBom = "e66e8975b10050b1b58a401a04554cf8584c7b5484435cee89685ed5be1f8b67";
 
     // shasum -a 256 bodyA bodyB bodyC bodyEmpty bodyBom
-    private const string ShaA = "007b32c88f6ba84199c05d5ff156d4bcfc4893a4a5bd4fe0623b47e0e31d3723";
-    private const string ShaB = "a5e2d64ba2950a3fa087b122b668446b6bba2d0430fb73c0332ff3bd85895cd0";
+    private const string ShaA = "82b3ffdac237a9517d005befbb8e9e151869a63d1bb46c645bed3596e0dc6e79";
+    private const string ShaB = "a243edc492a4ca11c518be89d2d3c572d3242cdebcee11f91ee89207416d395b";
     private const string ShaC = "37d7e4993e429768e2d11252df42922d67810d7b98f6f577d6f7dc6a2b60277c";
     private const string ShaEmpty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-    private const string ShaBom = "bc4dec93f457eeb8bdd10d90389cde1ef73e3ab46fda1002a07e52b2ad0638f2";
+    private const string ShaBom = "5966c27bca0824d21e0e7e619651311c7ec7d00e1069f59f0a2e9d77e16c9f15";
 
     // ------------------------------------------------------------------------------------------ corpi
 
     internal static byte[] BodyA() => Utf8(
         """
-        {"event":"document.uploaded","delivery_id":"whd_01M3VEESG5KBYR5PYAJ0TDT4B2","occurred_at":"2023-11-14T22:13:20.123Z","payload":{"document_id":"doc_01M3VEESG5KBYR5PYAJ0TDT4B2","filename":"perch@BS@u0027 e@BS@u0027.pdf","sha256":"cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e","deduplicated":false}}
+        {"event":"document.uploaded","delivery_id":4711,"occurred_at":"2023-11-14T22:13:20.123Z","payload":{"document_id":30017,"filename":"perch@BS@u0027 e@BS@u0027.pdf","sha256":"cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e","deduplicated":false}}
         """.Replace("@BS@", Backslash));
 
     // UTF-8 non ASCII (e con accento, tre ideogrammi, un carattere fuori dal piano base), CRLF e a capo finale.
     private static byte[] BodyB() => Utf8(
-        "{\"event\":\"document.uploaded\",\r\n  \"delivery_id\":\"whd_01M3VEESG5KBYR5PYAJ0TDT4B2\",\r\n"
+        "{\"event\":\"document.uploaded\",\r\n  \"delivery_id\":4711,\r\n"
         + "  \"payload\":{\"filename\":\"perch\U000000E9 \U000065E5\U0000672C\U00008A9E \U0001F4C4.pdf\"}}\r\n");
 
     // Byte che non sono UTF-8 valido (0xE8 e 0xFF): una ricodifica via stringa li sostituisce e cambia i byte.

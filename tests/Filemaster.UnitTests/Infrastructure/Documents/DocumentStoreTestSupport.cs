@@ -52,9 +52,9 @@ internal sealed class SentRequest
 /// <summary>Un adapter dei documenti su un trasporto con gestore finto (<see cref="TransportRig"/>), che registra ogni richiesta col suo corpo.</summary>
 internal sealed class StoreRig : IDisposable
 {
-    internal static readonly DocumentId Id = new("doc_01M3VEESG5KBYR5PYAJ0TDT4B2");
-    internal static readonly DocumentId OtherId = new("doc_01M3VEESPZ9C3HMABKJ9X24PAS");
-    internal static readonly DocumentId ThirdId = new("doc_01M3VEESSR30BNB50JNTGF31D8");
+    internal static readonly DocumentId Id = new("30017");
+    internal static readonly DocumentId OtherId = new("30019");
+    internal static readonly DocumentId ThirdId = new("30020");
 
     internal StoreRig(Action<FilemasterOptions>? configure = null)
     {

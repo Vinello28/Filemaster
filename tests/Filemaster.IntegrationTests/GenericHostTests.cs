@@ -69,7 +69,7 @@ public sealed class GenericHostTests
             var health = request.RequestUri.AbsolutePath.EndsWith("/healthz", StringComparison.Ordinal);
             var body = health
                 ? "ok"
-                : """{"id":"ten_01M3VCWS5PAKMSC47JNJ1PTFJQ","slug":"acme-test","name":"Acme Test","status":"active","created_at":"2026-10-01T09:59:09.501341Z"}""";
+                : """{"id":1,"slug":"acme-test","name":"Acme Test","status":"active","created_at":"2026-10-09T11:00:45.098964Z"}""";
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, health ? "text/plain" : "application/json"),

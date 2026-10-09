@@ -165,14 +165,14 @@ public sealed class TransportBufferedTests
     public async Task A_problem_json_404_becomes_NotFoundException_with_slug_detail_and_request_id_from_the_body()
     {
         using var rig = new TransportRig();
-        var reply = Reply.Problem(404, "not-found", "documento doc_abc non trovato", "body-id-7");
+        var reply = Reply.Problem(404, "not-found", "documento abc non trovato", "body-id-7");
         rig.Handler.Then(reply);
 
-        var exception = await Assert.ThrowsAsync<NotFoundException>(() => rig.Transport.SendBufferedAsync(TransportRig.Get("documents/doc_abc"), default));
+        var exception = await Assert.ThrowsAsync<NotFoundException>(() => rig.Transport.SendBufferedAsync(TransportRig.Get("documents/abc"), default));
 
         Assert.Equal(404, exception.StatusCode);
         Assert.Equal("not-found", exception.ProblemType);
-        Assert.Equal("documento doc_abc non trovato", exception.Detail);
+        Assert.Equal("documento abc non trovato", exception.Detail);
         Assert.Equal("body-id-7", exception.RequestId);
         Assert.Equal(1, reply.ContentOf().DisposeCount);
         Assert.Single(rig.Handler.Requests); // un 404 non si ritenta

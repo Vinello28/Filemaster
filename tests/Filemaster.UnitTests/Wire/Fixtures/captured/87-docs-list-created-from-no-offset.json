@@ -1,1 +1,1 @@
-{"type":"/problems/validation-error","title":"richiesta non valida","status":400,"detail":"created_from non valido: attesa una data (2026-09-21) o un istante RFC 3339 con il fuso (2026-09-21T10:00:00Z, 2026-09-21T12:00:00\u002B02:00)","request_id":"f356c1187a6742bd"}
+{"type":"/problems/validation-error","title":"richiesta non valida","status":400,"detail":"created_from non valido: attesa una data (2026-09-21) o un istante RFC 3339 con il fuso (2026-09-21T10:00:00Z, 2026-09-21T12:00:00\u002B02:00)","request_id":"52ea06202eb60f3a"}

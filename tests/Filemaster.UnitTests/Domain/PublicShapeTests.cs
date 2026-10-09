@@ -171,7 +171,6 @@ public sealed class PublicShapeTests
     private static object Sample(Type parameterType, string name, int index)
     {
         var type = Nullable.GetUnderlyingType(parameterType) ?? parameterType;
-        var number = index.ToString("D25", CultureInfo.InvariantCulture); // 25 cifre: con un prefisso di 0 e' un ULID canonico
 
         if (type == typeof(string))
         {
@@ -211,17 +210,17 @@ public sealed class PublicShapeTests
 
         if (type == typeof(DocumentId))
         {
-            return new DocumentId("doc_0" + number);
+            return DocumentId.From(7_000_000_000L + index); // bigint: oltre int.MaxValue
         }
 
         if (type == typeof(ContactId))
         {
-            return new ContactId("con_0" + number);
+            return ContactId.From(2000 + index);
         }
 
         if (type == typeof(TenantId))
         {
-            return new TenantId("ten_0" + number);
+            return TenantId.From(3000 + index);
         }
 
         if (type == typeof(FolderCode))

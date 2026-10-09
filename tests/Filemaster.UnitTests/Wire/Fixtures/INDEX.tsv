@@ -1,63 +1,63 @@
 01-healthz	GET	/healthz	200	text/plain; charset=utf-8	2
 02-readyz	GET	/readyz	200	application/json; charset=utf-8	18
-03-tenant	GET	/tenant	200	application/json; charset=utf-8	137
-21-folders-create-parent	POST	/folders	201	application/json; charset=utf-8	74
+03-tenant	GET	/tenant	200	application/json; charset=utf-8	107
+21-folders-create-parent	POST	/folders	201	application/json; charset=utf-8	76
 22-folders-create-child	POST	/folders	201	application/json; charset=utf-8	108
-24-folders-list	GET	/folders	200	application/json; charset=utf-8	163
+24-folders-list	GET	/folders	200	application/json; charset=utf-8	165
 26-folders-list-children	GET	/folders?parent_id=FATTURE	200	application/json; charset=utf-8	120
 28-folders-patch-name	PATCH	/folders/FATTURE.2026	200	application/json; charset=utf-8	119
 44-folders-patch-code	PATCH	/folders/FATTURE.2026	200	application/json; charset=utf-8	108
 46-err-404-folder-list-parent-malformed	GET	/folders?parent_id=%20zz%2F	404	application/problem+json	133
-47-doc-upload	POST	/documents	201	application/json; charset=utf-8	437
-48-doc-upload-dedup	POST	/documents	201	application/json; charset=utf-8	437
-49-doc-upload-no-metadata	POST	/documents	201	application/json; charset=utf-8	291
-50-doc-upload-text	POST	/documents	201	application/json; charset=utf-8	316
-52-doc-upload-nonascii-raw-filename	POST	/documents	201	application/json; charset=utf-8	296
-54-doc-upload-filename-and-star	POST	/documents	201	application/json; charset=utf-8	301
-70-docs-list-default	GET	/documents	200	application/json; charset=utf-8	3681
-71-docs-list-limit1-page1	GET	/documents?limit=1	200	application/json; charset=utf-8	397
-72-docs-list-limit1-page2	GET	/documents?limit=1&cursor=djF8MTc5MDg0ODc1NjM1MDEzNnxkb2NfMDFNM1ZFRVRLWTdHOVFNWkhWNERQUTNRQ1Y	200	application/json; charset=utf-8	360
-73-docs-list-last-page-exact	GET	/documents?limit=12	200	application/json; charset=utf-8	3681
-75-docs-list-last-page-cursor	GET	/documents?limit=11&cursor=djF8MTc5MDg0ODc1NTMzMzcyOXxkb2NfMDFNM1ZFRVNNNVdEVEozOEpCMzg0S1Y1Nk0	200	application/json; charset=utf-8	428
-77-docs-list-filter-metadata	GET	/documents?metadata=%7B%22arxivar%22%3A%7B%22docnumber%22%3A12345%7D%7D	200	application/json; charset=utf-8	846
-79-docs-list-filter-folder	GET	/documents?folder_id=FATTURE	200	application/json; charset=utf-8	846
-80-docs-list-filter-owner-tag	GET	/documents?owner=maria&tag=fattura	200	application/json; charset=utf-8	846
-81-docs-list-filter-sender	GET	/documents?sender=Acme%20Srl	200	application/json; charset=utf-8	846
-83-docs-list-filter-filename	GET	/documents?filename=fattura	200	application/json; charset=utf-8	846
-84-docs-list-filter-q	GET	/documents?q=fattura	200	application/json; charset=utf-8	846
-85-docs-list-filter-metadata-query	GET	/documents?metadata_query=X	200	application/json; charset=utf-8	846
+47-doc-upload	POST	/documents	201	application/json; charset=utf-8	407
+48-doc-upload-dedup	POST	/documents	201	application/json; charset=utf-8	407
+49-doc-upload-no-metadata	POST	/documents	201	application/json; charset=utf-8	263
+50-doc-upload-text	POST	/documents	201	application/json; charset=utf-8	285
+52-doc-upload-nonascii-raw-filename	POST	/documents	201	application/json; charset=utf-8	268
+54-doc-upload-filename-and-star	POST	/documents	201	application/json; charset=utf-8	273
+70-docs-list-default	GET	/documents	200	application/json; charset=utf-8	3632
+71-docs-list-limit1-page1	GET	/documents?limit=1	200	application/json; charset=utf-8	337
+72-docs-list-limit1-page2	GET	/documents?limit=1&cursor=djF8MTc5MTU0NDI2OTA3NjQzMnwzMDAyOA	200	application/json; charset=utf-8	299
+73-docs-list-last-page-exact	GET	/documents?limit=13	200	application/json; charset=utf-8	3632
+75-docs-list-last-page-cursor	GET	/documents?limit=12&cursor=djF8MTc5MTU0NDI2Nzk0OTQ1MnwzMDAxNw	200	application/json; charset=utf-8	298
+77-docs-list-filter-metadata	GET	/documents?metadata=%7B%22arxivar%22%3A%7B%22docnumber%22%3A12345%7D%7D	200	application/json; charset=utf-8	787
+79-docs-list-filter-folder	GET	/documents?folder_id=FATTURE	200	application/json; charset=utf-8	787
+80-docs-list-filter-owner-tag	GET	/documents?owner=maria&tag=fattura	200	application/json; charset=utf-8	787
+81-docs-list-filter-sender	GET	/documents?sender=Acme%20Srl	200	application/json; charset=utf-8	787
+83-docs-list-filter-filename	GET	/documents?filename=fattura	200	application/json; charset=utf-8	787
+84-docs-list-filter-q	GET	/documents?q=fattura	200	application/json; charset=utf-8	787
+85-docs-list-filter-metadata-query	GET	/documents?metadata_query=X	200	application/json; charset=utf-8	787
 87-docs-list-created-from-no-offset	GET	/documents?created_from=2026-10-01T00:00:00	400	application/problem+json	267
-88-docs-list-created-from-date	GET	/documents?created_from=2026-01-01&created_to=2026-12-31	200	application/json; charset=utf-8	3681
-89-docs-list-created-from-z	GET	/documents?created_from=2026-01-01T00:00:00Z	200	application/json; charset=utf-8	3681
+88-docs-list-created-from-date	GET	/documents?created_from=2026-01-01&created_to=2026-12-31	200	application/json; charset=utf-8	3632
+89-docs-list-created-from-z	GET	/documents?created_from=2026-01-01T00:00:00Z	200	application/json; charset=utf-8	3632
 94-err-400-cursor-bad	GET	/documents?cursor=%21%21%21	400	application/problem+json	143
-98-doc-get	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2	200	application/json; charset=utf-8	430
-99-doc-get-no-folder	GET	/documents/doc_01M3VEESSR30BNB50JNTGF31D8	200	application/json; charset=utf-8	309
-100-doc-get-nonascii-name	GET	/documents/doc_01M3VEESZB0840CQS5H9YHPZQN	200	application/json; charset=utf-8	289
-101-doc-get-star-filename	GET	/documents/doc_01M3VEET2KJNGM1NQR73GSYWAN	200	application/json; charset=utf-8	313
-108-doc-content	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/content	200	application/pdf	590
-109-doc-content-range-0-9	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/content	206	application/pdf	10
-110-doc-content-range-suffix	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/content	206	application/pdf	10
-111-doc-content-range-open	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/content	206	application/pdf	585
-112-doc-content-range-unsatisfiable	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/content	416	application/pdf	0
-113-doc-content-range-multi	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/content	200	application/pdf	590
-115-doc-content-nonascii-name	GET	/documents/doc_01M3VEESZB0840CQS5H9YHPZQN/content	200	application/pdf	590
-116-doc-content-star-name	GET	/documents/doc_01M3VEET2KJNGM1NQR73GSYWAN/content	200	application/pdf	591
-118-doc-content-text	GET	/documents/doc_01M3VEESSR30BNB50JNTGF31D8/content	200	text/plain	17
-121-doc-preview-pdf	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/preview	200	application/pdf	590
-122-doc-preview-range	GET	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/preview	206	application/pdf	10
-126-doc-verify	POST	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/verify	200	application/json; charset=utf-8	177
+98-doc-get	GET	/documents/30017	200	application/json; charset=utf-8	401
+99-doc-get-no-folder	GET	/documents/30020	200	application/json; charset=utf-8	279
+100-doc-get-nonascii-name	GET	/documents/30022	200	application/json; charset=utf-8	262
+101-doc-get-star-filename	GET	/documents/30023	200	application/json; charset=utf-8	283
+108-doc-content	GET	/documents/30017/content	200	application/pdf	590
+109-doc-content-range-0-9	GET	/documents/30017/content	206	application/pdf	10
+110-doc-content-range-suffix	GET	/documents/30017/content	206	application/pdf	10
+111-doc-content-range-open	GET	/documents/30017/content	206	application/pdf	585
+112-doc-content-range-unsatisfiable	GET	/documents/30017/content	416	application/pdf	0
+113-doc-content-range-multi	GET	/documents/30017/content	200	application/pdf	590
+115-doc-content-nonascii-name	GET	/documents/30022/content	200	application/pdf	590
+116-doc-content-star-name	GET	/documents/30023/content	200	application/pdf	591
+118-doc-content-text	GET	/documents/30020/content	200	text/plain	17
+121-doc-preview-pdf	GET	/documents/30017/preview	200	application/pdf	590
+122-doc-preview-range	GET	/documents/30017/preview	206	application/pdf	10
+126-doc-verify	POST	/documents/30017/verify	200	application/json; charset=utf-8	150
 129-docs-bulk-verify	POST	/documents/bulk/verify	200	application/json; charset=utf-8	55
 133-docs-bulk-move	POST	/documents/bulk/move	200	application/json; charset=utf-8	11
 134-docs-bulk-move-to-root	POST	/documents/bulk/move	200	application/json; charset=utf-8	11
-136-doc-move-to-folder	PATCH	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/folder	204	-	0
-138-doc-move-to-null	PATCH	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/folder	204	-	0
-139-doc-move-empty-object	PATCH	/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/folder	204	-	0
-150-contacts-list	GET	/contacts	200	application/json; charset=utf-8	12
-151-contact-categories-list	GET	/contact-categories	200	application/json; charset=utf-8	12
+136-doc-move-to-folder	PATCH	/documents/30017/folder	204	-	0
+138-doc-move-to-null	PATCH	/documents/30017/folder	204	-	0
+139-doc-move-empty-object	PATCH	/documents/30017/folder	204	-	0
+150-contacts-list	GET	/contacts	200	application/json; charset=utf-8	847
+151-contact-categories-list	GET	/contact-categories	200	application/json; charset=utf-8	75
 152-contacts-list-q	GET	/contacts?q=acme	200	application/json; charset=utf-8	12
 215-folders-list-after-delete	GET	/folders	200	application/json; charset=utf-8	12
-224-readyz-503-db-down	GET	/readyz	503	application/json; charset=utf-8	61
-301-contacts-page	GET	/contacts?limit=2	200	application/json; charset=utf-8	785
-302-contact-detail	GET	/contacts/con_01M40AM8YZQ7RVR7VDFNGZBNR9	200	application/json; charset=utf-8	460
-303-contact-categories	GET	/contact-categories	200	application/json; charset=utf-8	75
-304-doc-detail-without-content-with-contacts	GET	/documents/doc_01M40AM90G4B6DTDVDDSFSW7HR	200	application/json; charset=utf-8	578
+223-readyz-503-db-down	GET	/readyz	503	application/json; charset=utf-8	61
+258-contacts-list-first	GET	/contacts?limit=1	200	application/json; charset=utf-8	548
+259-contact-get	GET	/contacts/1	200	application/json; charset=utf-8	429
+265-docs-list-filter-sender-id	GET	/documents?sender_id=1	200	application/json; charset=utf-8	298
+266-docs-list-filter-recipient-id	GET	/documents?recipient_id=1	200	application/json; charset=utf-8	12

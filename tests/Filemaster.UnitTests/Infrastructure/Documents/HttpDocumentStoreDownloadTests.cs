@@ -29,7 +29,7 @@ public sealed class HttpDocumentStoreDownloadTests
         Assert.Equal("application/pdf", content.ContentType);
         Assert.Equal("fattura.pdf", content.FileName);
         Assert.Equal(590, content.ContentLength);
-        Assert.Equal(new DateTimeOffset(2026, 10, 1, 9, 59, 15, TimeSpan.Zero), content.LastModified);
+        Assert.Equal(new DateTimeOffset(2026, 10, 9, 11, 11, 7, TimeSpan.Zero), content.LastModified);
         Assert.False(content.IsPartial);
         Assert.Null(content.Range);
         Assert.Equal(body, await StreamReading.ReadToEndAsync(content.Content, ReadApi.Async, 100));

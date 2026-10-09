@@ -411,7 +411,7 @@ public sealed class ProblemMapperTests
     public void Mutated_valid_bodies_never_make_the_mapper_throw()
     {
         // Ogni prefisso e ogni byte alterato di un problem+json vero: nessuna eccezione, sempre un'eccezione del Domain.
-        var valid = Problem("not-found", 404, detail: "documento doc_abc non trovato", requestId: "abc-123");
+        var valid = Problem("not-found", 404, detail: "documento abc non trovato", requestId: "abc-123");
         for (var length = 0; length <= valid.Length; length++)
         {
             Assert.NotNull(ProblemMapper.Map(404, valid.Take(length).ToArray(), null));

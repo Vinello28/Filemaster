@@ -1,2 +1,2 @@
-GET /documents/doc_01M3VEESSR30BNB50JNTGF31D8/content
+GET /documents/30020/content
 # auth: X-API-Key (scope read)

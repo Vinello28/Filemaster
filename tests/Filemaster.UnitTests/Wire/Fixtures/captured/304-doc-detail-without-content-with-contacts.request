@@ -1,2 +1,0 @@
-GET /documents/doc_01M40AM90G4B6DTDVDDSFSW7HR
-# auth: X-API-Key (scope read); cattura T6.3 del 2026-10-03, dati seminati da eng/e2e/seed.sh

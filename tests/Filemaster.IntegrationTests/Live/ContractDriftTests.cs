@@ -11,7 +11,7 @@ namespace Filemaster.IntegrationTests.Live;
 /// <summary>
 /// La forma GREZZA delle risposte del server, letta con un <see cref="HttpClient"/> nudo (senza il client Filemaster): se il
 /// server aggiunge, toglie o rinomina un campo, cambia il formato delle date o degli errori, questi test lo dicono prima che il
-/// livello wire (scritto sulle catture @8aec8bb) cominci a sbagliare in silenzio. Le liste di campi sono quelle che il client
+/// livello wire (scritto sulle catture di Sharp-a-File 541f378, id numerici) cominci a sbagliare in silenzio. Le liste di campi sono quelle che il client
 /// legge (Infrastructure/Wire) per un oggetto con tutti i campi valorizzati: i null il server li omette.
 /// </summary>
 [Trait("Category", "Live")]
@@ -28,7 +28,7 @@ public sealed class ContractDriftTests
         "sender", "sha256", "size_bytes", "tag",
     };
 
-    // Il contatto esterno di seed.sh: tutti i campi del ContactDto @8aec8bb tranne fax, mobile, ipa_code e office_code (non seminati).
+    // Il contatto esterno di seed.sh: tutti i campi del ContactDto @541f378 tranne fax, mobile, ipa_code e office_code (non seminati).
     private static readonly string[] ContactListFields =
     {
         "address", "category_id", "city", "code", "country", "created_at", "documents_as_recipient", "documents_as_sender", "email",
@@ -48,6 +48,7 @@ public sealed class ContractDriftTests
         using var json = await JsonBody(response, HttpStatusCode.OK);
 
         Assert.Equal(TenantFields, Names(json.RootElement));
+        Assert.Equal(JsonValueKind.Number, json.RootElement.GetProperty("id").ValueKind);
         Assert.Equal("active", json.RootElement.GetProperty("status").GetString());
         Assert.Matches(Timestamp, json.RootElement.GetProperty("created_at").GetString()!);
     }
@@ -75,6 +76,8 @@ public sealed class ContractDriftTests
             using var json = await JsonBody(response, HttpStatusCode.OK);
 
             Assert.Equal(DocumentFields, Names(json.RootElement));
+            Assert.Equal(JsonValueKind.Number, json.RootElement.GetProperty("id").ValueKind);
+            Assert.Equal(uploaded.Document.Id.Number, json.RootElement.GetProperty("id").GetInt64());
             Assert.Equal(JsonValueKind.Array, json.RootElement.GetProperty("contacts").ValueKind);
             Assert.Equal(JsonValueKind.Object, json.RootElement.GetProperty("metadata").ValueKind);
             Assert.Matches(Timestamp, json.RootElement.GetProperty("created_at").GetString()!);
@@ -83,7 +86,7 @@ public sealed class ContractDriftTests
             // L'elenco omette "contacts"; un documento senza cartella omette "folder_id" (null omessi).
             using var list = await http.GetAsync(new Uri("documents?owner=o&tag=t&limit=200", UriKind.Relative), Ct);
             using var page = await JsonBody(list, HttpStatusCode.OK);
-            var item = Assert.Single(page.RootElement.GetProperty("items").EnumerateArray(), i => i.GetProperty("id").GetString() == uploaded.Document.Id.Value);
+            var item = Assert.Single(page.RootElement.GetProperty("items").EnumerateArray(), i => i.GetProperty("id").GetInt64() == uploaded.Document.Id.Number);
             Assert.Equal(DocumentFields.Where(f => f != "contacts"), Names(item));
 
             // Upload grezzo: 201, senza Location, "deduplicated" al posto di "contacts".
@@ -93,7 +96,7 @@ public sealed class ContractDriftTests
             form.Add(file, "file", "grezzo.pdf");
             using var created = await http.PostAsync(new Uri("documents", UriKind.Relative), form, Ct);
             using var body = await JsonBody(created, HttpStatusCode.Created);
-            cleanup.Document(new DocumentId(body.RootElement.GetProperty("id").GetString()!));
+            cleanup.Document(DocumentId.From(body.RootElement.GetProperty("id").GetInt64()));
             Assert.Null(created.Headers.Location);
             Assert.Equal(
                 new[] { "created_at", "deduplicated", "has_content", "id", "metadata", "mime_type", "original_filename", "sha256", "size_bytes" },
@@ -112,7 +115,8 @@ public sealed class ContractDriftTests
         var contact = Assert.Single(json.RootElement.GetProperty("items").EnumerateArray());
         Assert.Equal(ContactListFields, Names(contact));
         Assert.Equal("external", contact.GetProperty("kind").GetString());
-        Assert.StartsWith("con_", contact.GetProperty("id").GetString(), StringComparison.Ordinal);
+        Assert.Equal(JsonValueKind.Number, contact.GetProperty("id").ValueKind);
+        Assert.True(contact.GetProperty("id").GetInt32() >= 1);
 
         using var categories = await http.GetAsync(new Uri("contact-categories", UriKind.Relative), Ct);
         using var list = await JsonBody(categories, HttpStatusCode.OK);
@@ -122,17 +126,17 @@ public sealed class ContractDriftTests
     }
 
     [Fact]
-    public async Task An_error_is_problem_json_with_the_request_id_in_the_body_and_not_in_the_headers()
+    public async Task An_error_is_problem_json_with_the_same_request_id_in_the_body_and_in_the_header()
     {
         using var http = Http(ReadKey);
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("documents/doc_00000000000000000000000000", UriKind.Relative));
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("documents/" + long.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture), UriKind.Relative));
         request.Headers.Add("X-Request-ID", "e2edrift0123456789abcdef01234567");
 
         using var response = await http.SendAsync(request, Ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
-        Assert.False(response.Headers.Contains("X-Request-ID"));
+        Assert.Equal(new[] { "e2edrift0123456789abcdef01234567" }, response.Headers.GetValues("X-Request-ID"));
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(ProblemFields, Names(json.RootElement));
         Assert.Equal("/problems/not-found", json.RootElement.GetProperty("type").GetString());
@@ -156,6 +160,7 @@ public sealed class ContractDriftTests
             using var check = await JsonBody(verified, HttpStatusCode.OK);
             Assert.True(check.RootElement.GetProperty("ok").GetBoolean());
             Assert.Equal(new[] { "checked_at", "document_id", "ok", "sha256" }, Names(check.RootElement));
+            Assert.Equal(uploaded.Document.Id.Number, check.RootElement.GetProperty("document_id").GetInt64());
 
             using var delete = new HttpRequestMessage(HttpMethod.Delete, new Uri(path, UriKind.Relative)) { Content = new ByteArrayContent(Array.Empty<byte>()) };
             Assert.Equal(0, delete.Content.Headers.ContentLength);

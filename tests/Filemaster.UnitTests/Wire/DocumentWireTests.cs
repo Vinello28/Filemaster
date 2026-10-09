@@ -7,14 +7,14 @@ using Filemaster.Infrastructure;
 namespace Filemaster.UnitTests.Wire;
 
 /// <summary>
-/// I documenti letti dalle risposte catturate dal server <c>dev</c> (caricamenti 47-54, dettagli 98-101, elenchi 70-75) e dalle due risposte
-/// DERIVATE dal codice del server (documento con contatti, documento senza contenuto: nessuna cattura le contiene). I valori attesi sono
-/// ricopiati dai file. Poi gli obblighi che il Domain impone a chi legge: <c>metadata</c> copiato e mai <c>default</c>, <c>has_content</c>
+/// I documenti letti dalle risposte catturate dal server <c>master</c> 541f378 (capture t64: caricamenti 47-54, dettagli 98-101, elenchi 70-75) e
+/// dalle due risposte DERIVATE dal codice del server (documento con contatti, documento senza contenuto con id oltre <c>int.MaxValue</c>).
+/// L'id di un documento e' un NUMERO JSON (<c>bigint</c> sul server). I valori attesi sono ricopiati dai file. Poi gli obblighi che il Domain impone a chi legge: <c>metadata</c> copiato e mai <c>default</c>, <c>has_content</c>
 /// ignorato, <c>contacts</c> assente = lista vuota, ogni id con il <c>TryParse</c> del suo tipo, <c>sha256</c> e <c>size_bytes</c> validati.
 /// </summary>
 public sealed class DocumentWireTests
 {
-    private const string FatturaId = "doc_01M3VEESG5KBYR5PYAJ0TDT4B2";
+    private const string FatturaId = "30017";
     private const string FatturaSha = "cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e";
 
     private static Document Read(byte[] body, int status = 200) => DocumentWire.ReadDocument(body, WireTest.Context(status));
@@ -32,11 +32,13 @@ public sealed class DocumentWireTests
     [Fact]
     public void The_captured_upload_with_every_field_is_read_field_by_field()
     {
-        // 47-doc-upload (curl -F: file, folder_id=FATTURE, owner, tag, sender, recipient, metadata) -> 201
+        // 47-doc-upload (curl -F: file, folder_id=FATTURE, owner, tag, sender, recipient, metadata) -> 201. In t64 i byte erano gia' nel
+        // magazzino di una corsa precedente: anche il primo caricamento della corsa ha "deduplicated":true (vedi il README delle fixture).
         var result = ReadUpload(WireFixtures.Captured("47-doc-upload"));
         var document = result.Document;
 
-        Assert.False(result.Deduplicated);
+        Assert.True(result.Deduplicated);
+        Assert.Equal(30017L, document.Id.Number);
         Assert.Equal(new DocumentId(FatturaId), document.Id);
         Assert.Equal(new FolderCode("FATTURE"), document.FolderId);
         Assert.Equal("fattura.pdf", document.OriginalFilename);
@@ -48,7 +50,7 @@ public sealed class DocumentWireTests
         Assert.Equal("Acme Srl", document.Sender);
         Assert.Equal("Beta Spa", document.Recipient);
         Assert.Equal("{\"arxivar\":{\"docnumber\":12345,\"categoria\":\"X\"}}", document.Metadata.GetRawText());
-        Assert.Equal(At("2026-10-01T09:59:15.20534Z"), document.CreatedAt);
+        Assert.Equal(At("2026-10-09T11:11:07.949452Z"), document.CreatedAt);
         Assert.True(document.HasContent);
         Assert.Empty(document.Contacts);
     }
@@ -56,15 +58,25 @@ public sealed class DocumentWireTests
     [Fact]
     public void The_captured_deduplicated_upload_is_a_new_document_with_the_same_hash_and_Deduplicated_true()
     {
-        // 48-doc-upload-dedup: stessi byte della 47, id nuovo, "deduplicated":true
+        // 48-doc-upload-dedup: stessi byte della 47, id nuovo (il documento nuovo c'e' sempre), "deduplicated":true
         var first = ReadUpload(WireFixtures.Captured("47-doc-upload"));
         var again = ReadUpload(WireFixtures.Captured("48-doc-upload-dedup"));
 
         Assert.True(again.Deduplicated);
-        Assert.Equal(new DocumentId("doc_01M3VEESM5WDTJ38JB384KV56M"), again.Document.Id);
+        Assert.Equal(new DocumentId("30018"), again.Document.Id);
         Assert.NotEqual(first.Document.Id, again.Document.Id);
         Assert.Equal(first.Document.Sha256, again.Document.Sha256);
-        Assert.Equal(At("2026-10-01T09:59:15.333729Z"), again.Document.CreatedAt);
+        Assert.Equal(At("2026-10-09T11:11:08.046669Z"), again.Document.CreatedAt);
+    }
+
+    [Fact]
+    public void A_fresh_upload_has_deduplicated_false()
+    {
+        // Le catture t64 hanno tutte "deduplicated":true (vedi sopra): il caso "contenuto nuovo" si prova con una variante di una cattura.
+        var result = ReadUpload(Variants.With(WireFixtures.Captured("47-doc-upload"), "deduplicated", "false"));
+
+        Assert.False(result.Deduplicated);
+        Assert.Equal(new DocumentId(FatturaId), result.Document.Id);
     }
 
     [Fact]
@@ -74,7 +86,7 @@ public sealed class DocumentWireTests
         var result = ReadUpload(WireFixtures.Captured("49-doc-upload-no-metadata"));
         var document = result.Document;
 
-        Assert.False(result.Deduplicated);
+        Assert.Equal(30019L, document.Id.Number);
         Assert.Null(document.FolderId);
         Assert.Null(document.Owner);
         Assert.Null(document.Tag);
@@ -132,7 +144,7 @@ public sealed class DocumentWireTests
         // 99-doc-get-no-folder: nessun folder_id; "metadata":{}
         var document = Read(WireFixtures.Captured("99-doc-get-no-folder"));
 
-        Assert.Equal(new DocumentId("doc_01M3VEESSR30BNB50JNTGF31D8"), document.Id);
+        Assert.Equal(new DocumentId("30020"), document.Id);
         Assert.Null(document.FolderId);
         Assert.Equal("{}", document.Metadata.GetRawText());
         Assert.Equal("note.txt", document.OriginalFilename);
@@ -155,26 +167,27 @@ public sealed class DocumentWireTests
 
     // ----- elenchi catturati -----
 
-    private static readonly (string Id, string? Folder, string Name, string Mime, string Sha, long Size, string? Owner, string? Tag, string? Sender, string? Recipient, string Created)[] DefaultList =
+    private static readonly (string Id, string? Folder, string Name, string Mime, string? Sha, long Size, string? Owner, string? Tag, string? Sender, string? Recipient, string Created)[] DefaultList =
     {
-        ("doc_01M3VEETKY7G9QMZHV4DPQ3QCV", null, "random5m.bin", "application/octet-stream", "7be2c8bb3d25189eafebf9688085116d87b7853a629f0d2dea12702353d30d9a", 5242880, null, "grande", null, null, "2026-10-01T09:59:16.350136Z"),
-        ("doc_01M3VEETF3Z4KS9JNCGXMMQ56H", null, "liar.pdf", "text/plain", "2642a9f1a864c2ac7c40ca37a5c39e3b1b23ac0055ecd27e88df3f2494690daa", 591, null, null, null, null, "2026-10-01T09:59:16.195982Z"),
-        ("doc_01M3VEETCAGEM7EB49BW3TKQN3", null, "sniff2.pdf", "application/pdf", "f81091e6daca5756241638b89ade5305e5907ba5a7a60b8628b78218fbddfb96", 591, null, null, null, null, "2026-10-01T09:59:16.106904Z"),
-        ("doc_01M3VEET94XHXTM899Y6GYQEFN", null, "sniff1.pdf", "application/pdf", "6fcf3405e0f5487879d69582c72c60bca7f58108d76c16616dd9602b1ae895d6", 591, null, null, null, null, "2026-10-01T09:59:16.004959Z"),
-        ("doc_01M3VEET6299ZEEMKNHQNZEX3W", null, "perch\U000000E9 \U000000E8 both.pdf", "application/pdf", "cc38423f17e44c4c4627046fff07e50d2d7a3c6ad43d1d53470b19c6811d5e0e", 592, null, null, null, null, "2026-10-01T09:59:15.906582Z"),
-        ("doc_01M3VEET2KJNGM1NQR73GSYWAN", null, "perch\U000000E9 \U000000E8 star.pdf", "application/pdf", "3364de3cd740b830c8ec1f3d5d5992522e213f2c978645aa82d91dae6a4de59e", 591, "maria", null, null, null, "2026-10-01T09:59:15.795763Z"),
-        ("doc_01M3VEESZB0840CQS5H9YHPZQN", null, "perch\U000000E9 \U000000E8.pdf", "application/pdf", "6244a7b9a08bbf16367cffda96c73afcf99edf5392d9e3d6359a3d5eee70ad54", 590, null, null, null, null, "2026-10-01T09:59:15.691128Z"),
-        ("doc_01M3VEESWMWBTA191S2G8R2BFG", null, "alias.txt", "text/plain", "cf33f6169449c73f86f96c3b6ca248e68d4ebcf6b9b9075e2b1b44df975cad36", 17, null, null, "Acme", "Beta", "2026-10-01T09:59:15.604777Z"),
-        ("doc_01M3VEESSR30BNB50JNTGF31D8", null, "note.txt", "text/plain", "cf33f6169449c73f86f96c3b6ca248e68d4ebcf6b9b9075e2b1b44df975cad36", 17, "maria", "nota", null, null, "2026-10-01T09:59:15.512033Z"),
-        ("doc_01M3VEESPZ9C3HMABKJ9X24PAS", null, "altro.pdf", "application/pdf", "420a60ce8926908ea6e4c8fae82830fe434e278a6d8b0a6453dfc89affb16d4c", 589, null, null, null, null, "2026-10-01T09:59:15.423988Z"),
-        ("doc_01M3VEESM5WDTJ38JB384KV56M", "FATTURE", "fattura.pdf", "application/pdf", FatturaSha, 590, "maria", "fattura", "Acme Srl", "Beta Spa", "2026-10-01T09:59:15.333729Z"),
-        (FatturaId, "FATTURE", "fattura.pdf", "application/pdf", FatturaSha, 590, "maria", "fattura", "Acme Srl", "Beta Spa", "2026-10-01T09:59:15.20534Z"),
+        ("30028", null, "random5m.bin", "application/octet-stream", "e92dc1199624a1dc46ac306604aa5abedc5f17754e9019426cf973532f5329d8", 5242880, null, "grande", null, null, "2026-10-09T11:11:09.076432Z"),
+        ("30027", null, "liar.pdf", "text/plain", "2642a9f1a864c2ac7c40ca37a5c39e3b1b23ac0055ecd27e88df3f2494690daa", 591, null, null, null, null, "2026-10-09T11:11:08.92895Z"),
+        ("30026", null, "sniff2.pdf", "application/pdf", "f81091e6daca5756241638b89ade5305e5907ba5a7a60b8628b78218fbddfb96", 591, null, null, null, null, "2026-10-09T11:11:08.843855Z"),
+        ("30025", null, "sniff1.pdf", "application/pdf", "6fcf3405e0f5487879d69582c72c60bca7f58108d76c16616dd9602b1ae895d6", 591, null, null, null, null, "2026-10-09T11:11:08.728948Z"),
+        ("30024", null, "perch\U000000E9 \U000000E8 both.pdf", "application/pdf", "cc38423f17e44c4c4627046fff07e50d2d7a3c6ad43d1d53470b19c6811d5e0e", 592, null, null, null, null, "2026-10-09T11:11:08.636571Z"),
+        ("30023", null, "perch\U000000E9 \U000000E8 star.pdf", "application/pdf", "3364de3cd740b830c8ec1f3d5d5992522e213f2c978645aa82d91dae6a4de59e", 591, "maria", null, null, null, "2026-10-09T11:11:08.523468Z"),
+        ("30022", null, "perch\U000000E9 \U000000E8.pdf", "application/pdf", "6244a7b9a08bbf16367cffda96c73afcf99edf5392d9e3d6359a3d5eee70ad54", 590, null, null, null, null, "2026-10-09T11:11:08.408999Z"),
+        ("30021", null, "alias.txt", "text/plain", "cf33f6169449c73f86f96c3b6ca248e68d4ebcf6b9b9075e2b1b44df975cad36", 17, null, null, "Acme", "Beta", "2026-10-09T11:11:08.318237Z"),
+        ("30020", null, "note.txt", "text/plain", "cf33f6169449c73f86f96c3b6ca248e68d4ebcf6b9b9075e2b1b44df975cad36", 17, "maria", "nota", null, null, "2026-10-09T11:11:08.226216Z"),
+        ("30019", null, "altro.pdf", "application/pdf", "420a60ce8926908ea6e4c8fae82830fe434e278a6d8b0a6453dfc89affb16d4c", 589, null, null, null, null, "2026-10-09T11:11:08.134616Z"),
+        ("30018", "FATTURE", "fattura.pdf", "application/pdf", FatturaSha, 590, "maria", "fattura", "Acme Srl", "Beta Spa", "2026-10-09T11:11:08.046669Z"),
+        (FatturaId, "FATTURE", "fattura.pdf", "application/pdf", FatturaSha, 590, "maria", "fattura", "Acme Srl", "Beta Spa", "2026-10-09T11:11:07.949452Z"),
+        ("1", null, "e2e-seed-senza-contenuto.pdf", "application/pdf", null, 0, "e2e-seed", "e2e-seed", "Fornitore E2E", "Utente E2E", "2026-10-09T11:00:45.111024Z"),
     };
 
     [Fact]
-    public void The_captured_default_listing_has_twelve_documents_in_the_server_order_and_none_has_contacts()
+    public void The_captured_default_listing_has_thirteen_documents_in_the_server_order_and_none_has_contacts()
     {
-        // 70-docs-list-default: dal piu' recente; nessun next_cursor (12 documenti, il limite di default e' 50)
+        // 70-docs-list-default: dal piu' recente; nessun next_cursor (13 documenti, il limite di default e' 50); l'ultimo e' il documento seminato senza contenuto
         var page = ReadPage(WireFixtures.Captured("70-docs-list-default"));
 
         Assert.Null(page.NextCursor);
@@ -194,9 +207,11 @@ public sealed class DocumentWireTests
             Assert.Equal(expected.Sender, actual.Sender);
             Assert.Equal(expected.Recipient, actual.Recipient);
             Assert.Equal(At(expected.Created), actual.CreatedAt);
-            Assert.True(actual.HasContent);
+            Assert.Equal(expected.Sha is not null, actual.HasContent);
             Assert.Empty(actual.Contacts);
         }
+
+        Assert.Equal(DefaultList.Select(d => long.Parse(d.Id, CultureInfo.InvariantCulture)).ToArray(), page.Items.Select(d => d.Id.Number).ToArray());
     }
 
     [Fact]
@@ -208,31 +223,32 @@ public sealed class DocumentWireTests
 
         Assert.Equal(10, raw.Count(r => r == "{}"));
         Assert.Equal(2, raw.Count(r => r == "{\"arxivar\":{\"docnumber\":12345,\"categoria\":\"X\"}}"));
+        Assert.Equal(1, raw.Count(r => r == "{\"e2e\":{\"seed\":true}}"));
     }
 
     [Fact]
     public void The_captured_pages_chain_with_an_opaque_cursor_and_the_last_page_has_none()
     {
-        // 71 (limit=1): 1 documento + cursore; 72 (limit=1&cursor=...): il documento dopo + un altro cursore; 75: ultima pagina senza cursore
+        // 71 (limit=1): 1 documento + cursore; 72 (limit=1&cursor=...): il documento dopo + un altro cursore; 75: ultima pagina senza cursore (il documento seminato)
         var first = ReadPage(WireFixtures.Captured("71-docs-list-limit1-page1"));
         var second = ReadPage(WireFixtures.Captured("72-docs-list-limit1-page2"));
         var last = ReadPage(WireFixtures.Captured("75-docs-list-last-page-cursor"));
 
-        Assert.Equal(new DocumentId("doc_01M3VEETKY7G9QMZHV4DPQ3QCV"), Assert.Single(first.Items).Id);
-        Assert.Equal("djF8MTc5MDg0ODc1NjM1MDEzNnxkb2NfMDFNM1ZFRVRLWTdHOVFNWkhWNERQUTNRQ1Y", first.NextCursor);
-        Assert.Equal(new DocumentId("doc_01M3VEETF3Z4KS9JNCGXMMQ56H"), Assert.Single(second.Items).Id);
-        Assert.Equal("djF8MTc5MDg0ODc1NjE5NTk4Mnxkb2NfMDFNM1ZFRVRGM1o0S1M5Sk5DR1hNTVE1Nkg", second.NextCursor);
-        Assert.Equal(new DocumentId(FatturaId), Assert.Single(last.Items).Id);
+        Assert.Equal(new DocumentId("30028"), Assert.Single(first.Items).Id);
+        Assert.Equal("djF8MTc5MTU0NDI2OTA3NjQzMnwzMDAyOA", first.NextCursor);
+        Assert.Equal(new DocumentId("30027"), Assert.Single(second.Items).Id);
+        Assert.Equal("djF8MTc5MTU0NDI2ODkyODk1MHwzMDAyNw", second.NextCursor);
+        Assert.Equal(new DocumentId("1"), Assert.Single(last.Items).Id);
         Assert.Null(last.NextCursor);
     }
 
     [Fact]
     public void A_full_last_page_has_no_cursor()
     {
-        // 73 (limit=12 con 12 documenti): una pagina piena puo' essere l'ultima; l'unico segnale e' l'assenza del cursore
+        // 73 (limit=13 con 13 documenti): una pagina piena puo' essere l'ultima; l'unico segnale e' l'assenza del cursore
         var page = ReadPage(WireFixtures.Captured("73-docs-list-last-page-exact"));
 
-        Assert.Equal(12, page.Items.Count);
+        Assert.Equal(13, page.Items.Count);
         Assert.Null(page.NextCursor);
     }
 
@@ -274,7 +290,9 @@ public sealed class DocumentWireTests
     }
 
     [Theory]
-    [InlineData("id", "5")]
+    [InlineData("id", "\"30017\"")] // l'id e' un numero JSON: una stringa di cifre non lo e'
+    [InlineData("id", "true")]
+    [InlineData("id", "[30017]")]
     [InlineData("original_filename", "5")]
     [InlineData("original_filename", "[\"a.pdf\"]")]
     [InlineData("mime_type", "{}")]
@@ -310,15 +328,38 @@ public sealed class DocumentWireTests
     }
 
     [Theory]
-    [InlineData("doc_abc")]
-    [InlineData("")]
-    [InlineData("doc_01m3veesg5kbyr5pyaj0tdt4b2")]
-    [InlineData("fld_01M3VEESG5KBYR5PYAJ0TDT4B2")]
-    [InlineData("doc_81M3VEESG5KBYR5PYAJ0TDT4B2")]
-    [InlineData("DOC_01M3VEESG5KBYR5PYAJ0TDT4B2")]
-    public void An_invalid_or_empty_document_id_is_not_interpretable_and_the_empty_id_is_never_produced(string id)
+    [InlineData("\"\"")]
+    [InlineData("\"doc_abc\"")]
+    [InlineData("\"doc_01M3VEESG5KBYR5PYAJ0TDT4B2\"")] // il vecchio formato con prefisso e ULID
+    [InlineData("1.5")]
+    [InlineData("30017.0")]
+    [InlineData("3.0017e4")]
+    [InlineData("-30017")]
+    [InlineData("-0")]
+    [InlineData("0")]
+    [InlineData("9223372036854775808")] // long.MaxValue + 1
+    [InlineData("100000000000000000000")]
+    [InlineData("null")] // null equivale ad assente: l'id e' obbligatorio
+    public void An_invalid_or_empty_document_id_is_not_interpretable_and_the_empty_id_is_never_produced(string rawJson)
     {
-        WireTest.Unexpected(() => Read(Variants.With(Detail(), "id", "\"" + id + "\"")));
+        var exception = WireTest.Unexpected(() => Read(Variants.With(Detail(), "id", rawJson)));
+
+        Assert.Contains("documento.id", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("1", 1L)]
+    [InlineData("2147483647", 2147483647L)]
+    [InlineData("2147483648", 2147483648L)] // un documento e' un bigint: oltre int.MaxValue e' un id valido
+    [InlineData("9007199254740992", 9007199254740992L)] // 2^53
+    [InlineData("9007199254740993", 9007199254740993L)] // 2^53 + 1: passando da double diventerebbe ...992
+    [InlineData("9223372036854775807", long.MaxValue)]
+    public void A_document_id_is_a_64_bit_integer_read_without_going_through_double(string rawJson, long expected)
+    {
+        var document = Read(Variants.With(Detail(), "id", rawJson));
+
+        Assert.Equal(expected, document.Id.Number);
+        Assert.Equal(rawJson, document.Id.Value);
     }
 
     [Theory]
@@ -537,6 +578,7 @@ public sealed class DocumentWireTests
         // DERIVATA (nessuna cattura): un documento importato da ARXivar con i soli metadati, come lo emette DocumentDto (null omessi).
         var document = Read(WireFixtures.Derived("doc-detail-without-content"));
 
+        Assert.Equal(5000000001L, document.Id.Number); // oltre int.MaxValue: un documento e' un bigint
         Assert.Null(document.Sha256);
         Assert.Equal(0L, document.SizeBytes);
         Assert.False(document.HasContent);
@@ -547,8 +589,8 @@ public sealed class DocumentWireTests
 
     // ----- contatti collegati (derivati) -----
 
-    private static readonly ContactId Acme = new("con_01M3VEF0K9Z8X7Y6W5V4T3S2R1");
-    private static readonly ContactId Beta = new("con_01M3VEF0P1Q2R3S4T5V6W7X8Y9");
+    private static readonly ContactId Acme = new("7");
+    private static readonly ContactId Beta = new("12");
 
     [Fact]
     public void The_derived_detail_with_contacts_has_them_in_order_with_their_roles_and_names()
@@ -590,10 +632,14 @@ public sealed class DocumentWireTests
     [Theory]
     [InlineData("role", "5")]
     [InlineData("role", "true")]
-    [InlineData("id", "5")]
+    [InlineData("id", "\"7\"")] // l'id di un contatto e' un numero JSON
     [InlineData("id", "\"con_abc\"")]
     [InlineData("id", "\"\"")]
-    [InlineData("id", "\"doc_01M3VEF0K9Z8X7Y6W5V4T3S2R1\"")]
+    [InlineData("id", "\"con_01M3VEF0K9Z8X7Y6W5V4T3S2R1\"")] // il vecchio formato con prefisso e ULID
+    [InlineData("id", "7.5")]
+    [InlineData("id", "-7")]
+    [InlineData("id", "0")]
+    [InlineData("id", "2147483648")] // oltre int.MaxValue: l'id di un contatto e' un int
     [InlineData("name", "5")]
     [InlineData("name", "null")]
     public void A_contact_with_a_wrong_field_is_not_interpretable(string field, string rawJson)
@@ -695,7 +741,7 @@ public sealed class DocumentWireTests
     [Fact]
     public void A_page_item_may_carry_contacts_when_the_server_sends_them()
     {
-        var body = Variants.EditItem(WireFixtures.Captured("71-docs-list-limit1-page1"), 0, item => item["contacts"] = System.Text.Json.Nodes.JsonNode.Parse("[{\"role\":\"sender\",\"id\":\"con_01M3VEF0K9Z8X7Y6W5V4T3S2R1\",\"name\":\"Acme Srl\"}]"));
+        var body = Variants.EditItem(WireFixtures.Captured("71-docs-list-limit1-page1"), 0, item => item["contacts"] = System.Text.Json.Nodes.JsonNode.Parse("[{\"role\":\"sender\",\"id\":7,\"name\":\"Acme Srl\"}]"));
 
         var page = ReadPage(body);
 

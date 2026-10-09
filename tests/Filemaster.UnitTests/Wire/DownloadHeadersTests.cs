@@ -63,13 +63,13 @@ public sealed class DownloadHeadersTests
     [Fact]
     public void The_captured_full_download_has_type_name_length_and_modification_time_and_no_range()
     {
-        // 108-doc-content: 200, Content-Length 590, application/pdf, Last-Modified Thu, 01 Oct 2026 09:59:15 GMT
+        // 108-doc-content: 200, Content-Length 590, application/pdf, Last-Modified Fri, 09 Oct 2026 11:11:07 GMT
         var headers = Read(FromCapture("108-doc-content"));
 
         Assert.Equal("application/pdf", headers.ContentType);
         Assert.Equal("fattura.pdf", headers.FileName);
         Assert.Equal(590L, headers.ContentLength);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 15), headers.LastModified);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 7), headers.LastModified);
         Assert.Null(headers.Range);
     }
 
@@ -225,7 +225,7 @@ public sealed class DownloadHeadersTests
             var headers = Read(FromCapture("110-doc-content-range-suffix"));
 
             Assert.Equal(new ContentRange(580, 589, 590), headers.Range);
-            Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 15), headers.LastModified);
+            Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 7), headers.LastModified);
         });
     }
 
@@ -256,7 +256,7 @@ public sealed class DownloadHeadersTests
             Assert.Equal("application/pdf", content.ContentType);
             Assert.Equal("fattura.pdf", content.FileName);
             Assert.Equal(10L, content.ContentLength);
-            Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 15), content.LastModified);
+            Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 7), content.LastModified);
             Assert.Equal(new ContentRange(0, 9, 590), content.Range);
             Assert.True(content.IsPartial);
             Assert.Equal(0, spy.Disposed);

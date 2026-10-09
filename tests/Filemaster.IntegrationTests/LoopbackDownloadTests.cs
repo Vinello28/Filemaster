@@ -37,7 +37,7 @@ public sealed class LoopbackDownloadTests
         Assert.False(content.IsPartial);
         var request = Assert.Single(server.Requests);
         Assert.Equal("GET", request.Method);
-        Assert.Equal("/documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/content", request.Target);
+        Assert.Equal("/documents/5000000001/content", request.Target);
         Assert.Equal(0, request.HeaderCount("Range"));
     }
 

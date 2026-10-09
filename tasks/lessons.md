@@ -391,3 +391,36 @@ tra la regola del server e il ciclo del client; test con 5 mutazioni (tutte catt
   `OperationCanceledException`, solo il timeout del client diventa `FilemasterTimeoutException`.
 - Il Domain espone `ContentIntegrityException(bool isTruncated, int statusCode, ...)` (bool e non enum: la decisione "niente enum" per i
   membri del Domain vale solo per i nomi wire, ma qui un bool si legge meglio con l'argomento con nome).
+
+## Verifica end-to-end dei filtri e id numerici (2026-10-09)
+
+57. **Un client "verificato" lo e' contro un commit preciso del server, e il server si muove.** Tra la verifica del 2026-10-03 (`8aec8bb`) e il
+    2026-10-09 Sharp-a-File ha cambiato gli id da `doc_<ULID>` a interi (commit `7ca0e7e`, 156 file): la suite verde non provava piu' nulla
+    sul server attuale. Prima di "verificare end-to-end" si confronta `git rev-list --count <pin>..HEAD` del server con il pin del client e si
+    legge il diff del contratto (`Api/`, `Domain/`) PRIMA di scrivere test: la domanda "contro quale server?" va fatta all'inizio, non alla fine.
+58. **Quello che la cattura reale smentisce vince sul rapporto di un subagent.** Tre report in sola lettura avevano ragione sull'insieme ma non
+    sui dettagli: nella ricattura (t64) il server accetta anche stringhe numeriche in `document_ids`, `X-Request-ID` compare ora anche
+    sugli errori (la nota di T0.3 era diventata falsa), `bulk/verify` NON ignora gli id <= 0 (404 su tutto il lotto) mentre `bulk/move` si',
+    `deleted.document_id` e' una stringa mentre negli altri due eventi e' un numero. Regola: ricatturare PRIMA di toccare il livello wire
+    e ricavare le asserzioni dalle fixture, non dalla memoria.
+59. **Id assegnati dal database: il seed non li sceglie, li rilegge per chiave naturale.** `INSERT` senza `id`, `DECLARE @t int = (SELECT id ... WHERE slug=...)`;
+    mai `SCOPE_IDENTITY()` dopo un `IF NOT EXISTS` (se la riga c'era gia' non e' stato inserito nulla e il valore e' vecchio). Gli id non sono piu'
+    deterministici e a ogni riavvio di SQL Server l'IDENTITY salta (+1000 int, +10000 bigint): nessun test puo' dipendere da un numero fisso,
+    ne' dal seed (documento 1) se non per il documento seminato che e' sempre il primo di un DB nuovo.
+60. **Il nome di una migrazione non si fissa negli script**: ha un timestamp e il server la rigenera (`20260923172733` -> `20261008193649`). Si cerca con
+    `find -name '*_InitialSchema.cs' ! -name '*.Designer.cs'` e si pretende che ne esista una sola.
+61. **Id numerici in un client: cambia il tipo dentro, non quello che si vede fuori.** `Value` e' rimasto `string` (decimale canonico), dentro c'e' un
+    `long`/`int`, `default` = 0 = id vuoto: URL, query string e ogni `.Value` di chi chiama continuano a funzionare. La validazione e' un ciclo
+    di char con controllo dell'overflow (niente `long.TryParse`: accetta spazi, `+`, zeri iniziali, cifre di altre culture). I lettori JSON
+    leggono `GetRawText()` e non passano da `double`: sopra 2^53 si perderebbe l'id (provato con 9007199254740993 e `long.MaxValue`).
+62. **Un test di filtro ha un oracolo calcolato a mano, non "contiene almeno uno".** `LiveDocumentFilterTests`: dataset con token per-run, insieme
+    esatto degli id attesi (con i membri che devono restare fuori), confronto campo per campo. La prova che il test serve e' il mutante sul
+    client (72, tra cui filtri tolti o scambiati, data senza offset, cursore ignorato): 4 sono sopravvissuti alla prima passata
+    (`EnumerateAsync` che ignora la dimensione della pagina, lettore che perde `folder_id`, che scambia mittente e destinatario, intervallo
+    confrontato sull'ora scritta) e hanno richiesto test nuovi. I sopravvissuti "equivalenti" si dimostrano (qui: il server fa gia' il trim
+    e confronta senza distinguere maiuscole), non si dichiarano.
+63. **Un'esecuzione di test con filtro puo' uscire con codice 8 senza fallimenti**: `dotnet test --filter-trait Category=Live` lanciato sulla soluzione
+    esce 8 ("zero test") per il progetto unit, che non ne ha. Leggere sempre "non riuscito: 0" e il totale, non solo `$?`.
+64. **Piu' subagent in parallelo vanno bene solo su alberi disgiunti e con un solo `dotnet`.** Cattura delle fixture (`eng/e2e`, `.e2e`) e Domain (`src`,
+    `tests/Domain`) hanno girato insieme; documentazione (nessun build) e test live (`dotnet`) pure. Il server condiviso va lasciato pulito: la cattura
+    gira su un'istanza usa-e-getta (porta 18083, limite di upload 100 MiB) perche' la suite live vuole il limite di 4 MiB.

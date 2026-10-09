@@ -12,7 +12,7 @@ internal sealed class TransportRequest
     /// <param name="method">Il metodo HTTP. <c>PATCH</c> si crea a mano (<c>new HttpMethod("PATCH")</c>): <c>HttpMethod.Patch</c> non esiste su netstandard2.0.</param>
     /// <param name="relativeUri">
     /// Il percorso relativo all'indirizzo base, <b>senza barra iniziale</b> (una barra iniziale scarterebbe l'eventuale prefisso di
-    /// percorso dell'indirizzo base), per esempio <c>documents/doc_X/content</c> o <c>folders?parent_id=FATTURE</c>.
+    /// percorso dell'indirizzo base), per esempio <c>documents/42/content</c> o <c>folders?parent_id=FATTURE</c>.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="method"/> o <paramref name="relativeUri"/> e' null.</exception>
     /// <exception cref="ArgumentException"><paramref name="relativeUri"/> e' vuoto, comincia per <c>/</c> o non e' un percorso relativo.</exception>

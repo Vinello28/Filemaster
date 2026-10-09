@@ -9,9 +9,9 @@ namespace Filemaster.UnitTests.Domain;
 /// </summary>
 public sealed class DocumentTests
 {
-    // Valori della fixture reale 98 del server dev (documento con metadati arxivar, non segreti).
-    private const string DocumentIdText = "doc_01M3VEESG5KBYR5PYAJ0TDT4B2";
-    private const string ContactIdText = "con_01M3VEESG5KBYR5PYAJ0TDT4B2";
+    // Id numerici del server attuale (documento bigint, contatto int); lo sha256 e' quello della fixture 98 del server dev.
+    private const string DocumentIdText = "5000000042";
+    private const string ContactIdText = "42";
     private const string Sha = "cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e";
     private const string MetadataText = """{"arxivar":{"docnumber":12345,"categoria":"X"}}""";
 

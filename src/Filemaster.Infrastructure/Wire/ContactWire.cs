@@ -69,7 +69,7 @@ internal static class ContactWire
 
     private static Contact ReadContact(WireObject contact) =>
         new(
-            contact.RequiredId<ContactId>("id", ContactId.TryParse, "un id di contatto"),
+            contact.RequiredNumericId<ContactId>("id", ContactId.TryParse, "un id di contatto"),
             contact.RequiredString("name"),
             KindOf(contact.OptionalString("kind")),
             contact.OptionalString("category_id"),

@@ -112,6 +112,14 @@ internal static class LiveServer
         return bytes;
     }
 
+    /// <summary>I numeri degli id dei documenti, in ordine crescente: la forma con cui i test confrontano insiemi di documenti (mai ordine lessicale delle stringhe).</summary>
+    internal static long[] Numbers(IEnumerable<Document> documents) =>
+        documents.Select(d => d.Id.Number).OrderBy(n => n).ToArray();
+
+    /// <summary>I numeri degli id, in ordine crescente.</summary>
+    internal static long[] Numbers(IEnumerable<DocumentId> ids) =>
+        ids.Select(id => id.Number).OrderBy(n => n).ToArray();
+
     /// <summary>SHA-256 in esadecimale minuscolo (la forma del server), con API presenti anche su net48.</summary>
     internal static string Sha256Hex(byte[] bytes)
     {

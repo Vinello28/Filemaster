@@ -54,7 +54,7 @@ public sealed class LoopbackWireTests
 
         var requests = server.Requests;
         Assert.Equal(
-            new[] { "GET /healthz", "GET /readyz", "GET /tenant", "GET /documents", "POST /documents", "DELETE /documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2" },
+            new[] { "GET /healthz", "GET /readyz", "GET /tenant", "GET /documents", "POST /documents", "DELETE /documents/5000000001" },
             requests.Select(r => r.Method + " " + r.Target));
         foreach (var request in requests)
         {

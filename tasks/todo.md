@@ -645,3 +645,110 @@ poi **T3** Application, **T4** Infrastructure (fixture reali in `$TMPDIR/filemas
 selezionate nel repo), **T6.2** `eng/e2e/*` + `e2e.yml` (script gia' pronti nello stesso `out/`, pin allo SHA di `dev`), **T7** docs,
 Fase B, Fase 8. Gli spike stanno in `$TMPDIR/filemaster-spikes/` (fuori dal repo): se la cartella sparisce, gli esiti restano in
 `tasks/lessons.md`, ma gli script e le fixture vanno ricreati.
+
+
+---
+
+# Verifica end-to-end del filtro documenti (piano del 2026-10-09)
+
+> Obiettivo: provare che Filemaster, usato come lo userebbe un gestionale, restituisce l'elenco di documenti filtrato dai
+> parametri dell'utente (`DocumentQuery` -> `IDocumentStore.ListAsync/EnumerateAsync` -> `GET /documents` -> Sharp-a-File).
+
+## Cosa ho trovato leggendo (prima di toccare qualunque cosa)
+
+- Esiste gia' l'harness live (`eng/e2e/*`, 31 test `Category=Live`), verde il 2026-10-03 contro Sharp-a-File `dev` **8aec8bb**.
+- Da allora Sharp-a-File e' andato avanti di 5 commit (`master` 541f378, `dev` 7ca0e7e, 2026-10-08/09): commit
+  **7ca0e7e "now the app use autoinc IDs"**: gli id passano da `doc_<ULID>` a interi IDENTITY (`int`; `bigint` per documenti
+  e consegne), 156 file modificati. Filemaster (`DocumentId`, `ContactId`, `TenantId`, seed, fixture, docs) assume ancora i
+  prefissi ULID: **contro il server attuale mi aspetto che fallisca**, non per i filtri ma per gli id.
+- I filtri del server (`QueryParsing.DocumentQuery`): `folder_id, owner, tag, filename, sender, recipient, metadata_query,
+  q, metadata, sender_id, recipient_id, created_from, created_to`. `DocumentQuery` li copre tutti; il test live
+  `Filters_pages_of_one_and_the_enumeration_...` va controllato filtro per filtro (copertura da misurare, non da presumere).
+
+## Decisione dell'utente (2026-10-09)
+Adeguare Filemaster al server **attuale** (Sharp-a-File `master` 541f378: id numerici) e verificare i filtri su quello.
+
+## Esito dell'analisi (3 subagent in sola lettura, nessun file toccato)
+
+**Contratto server 8aec8bb -> 541f378.** Rotte invariate. Id come numeri JSON: `int` per tenant/contatto/account/chiave/webhook,
+`long` per documento e consegna webhook. Cartelle e categorie restano codici stringa. URL/query: decimale canonico (`042`,
+`+42`, `doc_...` = 404). Corpi bulk: `{"document_ids":[42,43]}` (le stringhe `doc_...` = 400). Cursore: `id` numerico,
+i vecchi = 400. Webhook: `delivery_id` numero; `document_id` e' numero in `uploaded`/`integrity_failed` ma **stringa** in
+`deleted` (accettare entrambi). Altro: 413 `request-too-large` anche sui JSON, `X-Request-ID` ora anche nell'header degli errori,
+multipart troncato = 400 (era 500), `folder.parent_id == id` = 400. **Filtri di `GET /documents`: semantica invariata**, cambia
+solo il formato di `sender_id`/`recipient_id` (int canonico).
+
+**Impatto su Filemaster.** Sorgenti: `PrefixedId` + `DocumentId`/`ContactId`/`TenantId`; `WireObject.RequiredId/OptionalId`,
+`DocumentWire.WriteIds` (deve scrivere numeri), `VerifyWire`, `ContactWire`, `TenantWire`; `WebhookEventParser`
+(`delivery_id`, `document_id`). Query/URL (`Routes`, `QueryBuilder`) restano uguali se `Value` resta `string`. Test: ~97 file con
+736 id letterali (IdTests da riscrivere, ~40 unit, 8 live/loopback, 53-61 fixture), `pack-smoke/Smoke.cs` (canarino per net48/VB),
+`seed.sh`, `capture-fixtures.sh`, docs (`api-contract.md`, `architecture.md`, README, `Fixtures/README.md`).
+
+**Design scelto (minimo impatto, lezione 16).** `DocumentId`/`ContactId`/`TenantId` restano `readonly record struct` non
+posizionali con costruttore esplicito; dentro un numero (`long` documento, `int` contatto/tenant), `default` = 0 = id vuoto e
+non valido; `Value` resta `string` (decimale canonico, invariant culture) cosi' URL/query/`.Value` non si rompono; validazione =
+solo cifre ASCII, niente segno/zeri iniziali/spazi, intervallo `1..int.MaxValue` o `1..long.MaxValue`, ciclo di char (niente
+regex ne' `int.TryParse` da solo). Aggiunte additive: factory statica da `long`/`int` e accessor numerico (niente secondo
+costruttore: `PublicShapeTests` pretende un solo ctor). `WebhookEvent.DeliveryId` resta `string` (chiave di dedup), il parser
+accetta un numero JSON.
+
+**Harness su HEAD.** Fattibile: SQL Server/Edge, chiavi (`saf_`+base64url, hash `sha256:<hex>`), env e Dockerfile invariati.
+Da cambiare: `seed.sh` (niente `id` negli INSERT di tenants/api_keys/contacts/documents, `@t int`/`@d bigint`, id riletti per
+chiave naturale, **non** `SCOPE_IDENTITY()` dopo `IF NOT EXISTS`; via `gen_ulid` e `E2E_*_ID`), `capture-fixtures.sh`
+(placeholder `doc_abc`, `con_01...`, `key_...` -> `abc`/`0`/`042`/overflow; INSERT chiave senza `id`; `$D1` senza apici nel JSON),
+`run-e2e.sh:119` (migrazione rinominata `20261008193649_InitialSchema.cs`, patch ISJSON da rivalidare), pin SHA in `e2e.yml`,
+`README`, `ContractDriftTests`. Il DB va ricreato (`down.sh` con `-v`: InitialSchema riscritta, cartella tenant ora `/data/<int>/`).
+Il seed resta in SQL: tenant, contatti, categorie e documento senza contenuto non sono creabili dall'API.
+
+## Piano (ogni fase: build `--no-incremental` 0 avvisi, test, format x2; la catena di codice gira in serie, lezione 14)
+
+- [x] **P0 Baseline** *(fatto 2026-10-09: build --no-incremental 0 avvisi; test 5628 = 5566 superati + 62 Live ignorati; SDK 10.0.401+8.0.425; Docker 29.8.2 arm64)* (lezione 12): SDK/Docker, build, `dotnet test` senza server; `git status`. Pin del server = SHA di `master`.
+- [x] **P1 Harness su HEAD** *(fatto 2026-10-09, verificato da me: migrazione applicata su Azure SQL Edge, seed ok e idempotente (tenant=1, 3 chiavi, 3 contatti, doc 1), GET /tenant 200; id malformati 404, cursore non valido 400)* (prima del client, perche' la cattura reale e' la fonte di verita'): `seed.sh`, `run-e2e.sh`, pin; il
+      server parte e `GET /tenant` risponde con la chiave seminata. Se Azure SQL Edge rifiuta la nuova migrazione: stop e re-plan.
+- [x] **P2 Cattura** *(fatto 2026-10-09, subagent, verificato da me: `.e2e/fixtures/t64`, 291 richieste, 0 MISMATCH, 1159 file, 0 chiavi; stati tutti invariati rispetto a t63b; cambia solo string->number sugli id. Novita': il server accetta anche stringhe numeriche in `document_ids` (`["30017"]` = 200); `X-Request-ID` ora anche nell'header degli errori (la nota T0.3 non vale piu'); `sender_id`/`recipient_id` valido ma ignoto = 200 lista vuota; `bulk/verify` con id <= 0 = 404 (non ignorati), `bulk/move` li ignora; export ZIP: voci `<id>_<nome>`). Procedura: `FILEMASTER_E2E_URL=http://127.0.0.1:18083 FILEMASTER_E2E_MAX_UPLOAD_BYTES=104857600 eng/e2e/capture-fixtures.sh --set t64` su istanza usa-e-getta* `capture-fixtures.sh` adeguato; ricatturare e confrontare con quanto assunto sopra (id numerici ovunque?
+      404 vs 400 sugli id malformati? cursore?). **Quello che la cattura smentisce vince sul report dei subagent.**
+- [x] **P3 Domain** *(fatto 2026-10-09, subagent, verificato da me: build 0 avvisi; test Domain 700 = 350 x net8/net10, 0 falliti; 28 mutanti, 27 uccisi e 1 equivalente voluto; `NumericId` internal, `Number`, `From(long|int)`; i test fuori Domain falliscono come previsto: 866 righe, lista in P4)*: id numerici, `IdTests` riscritti, `PublicShapeTests`; mutazioni sui confini (0, 1, `int.MaxValue`+1, segno, zero iniziale, spazi).
+- [x] **P4 Wire + Application** *(fatto 2026-10-09, subagent, verificato da me: build 0 avvisi; 6030 test = 5968 superati + 62 Live ignorati, 0 falliti; format 0; lettori id solo da numeri JSON (stringa/float/negativo/zero/overflow rifiutati), `WriteIds` numerico, parser webhook `delivery_id` numero o stringa e `document_id` numero o stringa di cifre; fixture `captured/` rigenerate da t64 (63 catture), `derived/` riscritte; ~16 mutanti uccisi)* Testo originale:: lettura id come numeri, `WriteIds` numerico, parser webhook (numero e stringa), fixture derivate.
+- [x] **P5 Test e smoke** *(fatto 2026-10-09: suite live adeguata, 10 rotture iniziali tutte lato test; `pack-smoke` aggiornato (nella nuova cattura l'upload e' `deduplicated:true`); pack + `verify-packages.sh` 4 pacchetti OK; pack-smoke net8/net10 OK, net48 solo compilato (non Windows); shellcheck 0 (immagine pinnata; un SC2034 corretto in capture-fixtures.sh), actionlint 0; docs/README/e2e.yml aggiornati, pin = 541f3789037f6543746de11d02d8388ff9b9a215)*: unit/loopback/live, `pack-smoke` (C# 7.3 + VB), docs e README.
+- [x] **P6 Verifica dei filtri end-to-end** *(fatto 2026-10-09, vedi Review)* (l'obiettivo vero): mappa filtro -> test; un test live per ciascuno dei 13 filtri +
+      AND + paginazione + `EnumerateAsync` + filtro senza risultati, con oracolo calcolato a mano (insieme esatto di id), documenti
+      seminati ad hoc; ogni test nuovo provato con una mutazione (lezione 20); cinque corse di fila su net8/net10 con `REQUIRED=1`.
+- [x] **P7 Review** *(qui sotto; lezioni 57-64)* qui + lezioni nuove (id numerici, seed idempotente per chiave naturale).
+
+## Risposte dell'utente (2026-10-09)
+1. Nessuna versione e' ancora uscita (NuGet/GitHub non configurati): nessun vincolo di compatibilita' pubblica. 2. Pin del server = ultimo `master` (541f378).
+
+## (superato) Da decidere / segnalare prima di scrivere codice
+1. **Compatibilita' pubblica**: `git tag` mostra **`v1.0.0`** nel repo Filemaster, mentre il piano originale prevedeva solo un `-rc`.
+   Se qualcuno ha gia' pubblicato/consumato 1.0.0, `new DocumentId("doc_...")` che ora lancia e' una rottura: servirebbe una
+   versione maggiore (o `0.x`/`-rc`). Non lo verifico io su nuget.org senza che me lo dica l'utente.
+2. Il job `e2e.yml` e il pin diventano `master` 541f378: va bene? (Il README dice che `master` non aveva i codici cartella; ora li ha.)
+
+
+### Review della verifica end-to-end dei filtri (2026-10-09)
+
+**Risposta all'obiettivo.** Filemaster, contro un Sharp-a-File vero (`master` 541f378, SQL su Azure SQL Edge, immagine costruita dal suo
+Dockerfile), restituisce l'elenco filtrato esattamente come chiedono i parametri. Per ciascuno dei 13 filtri di `DocumentQuery`
+(`folder_id, owner, tag, filename, sender, recipient, sender_id, recipient_id, q, metadata_query, metadata, created_from, created_to`)
+c'e' un test live con l'insieme esatto di id atteso calcolato a mano (`LiveDocumentFilterTests`, 17 test), piu' AND, esclusione reciproca,
+ordine (piu' recente prima), paginazione di una query filtrata, `EnumerateAsync`, valori solo-spazi ignorati, validazione lato client
+(intervallo rovesciato = `ArgumentException` senza richiesta) e un caso come lo vivrebbe un gestionale: `AddFilemaster` + `IDocumentStore`
+con i campi di un "modulo di ricerca" in stringa. **Nessun bug in Filemaster ne' nel server sui filtri.**
+
+**Prove (verificate da me sul repo)**: build `--no-incremental` 0 avvisi; `dotnet test` 6064 = 5968 superati + 96 Live ignorati senza server,
+0 falliti; suite live con server: 96/96 (48 test x net8/net10) in due corse mie dopo le cinque del subagent, `FILEMASTER_E2E_REQUIRED=1`,
+server lasciato pulito (solo il documento 1, nessuna cartella); `dotnet format` x2 0; shellcheck e actionlint 0; pack + verify-packages +
+pack-smoke OK. Mutanti: 72 sul client per i filtri (tutti uccisi, 2 equivalenti dimostrati), ~28 sul Domain, ~16 su wire e parser.
+
+**Cosa e' cambiato**: id numerici (Domain `NumericId`, `DocumentId/ContactId/TenantId`), lettori JSON solo da numeri, `WriteIds` numerico,
+parser webhook (`delivery_id` numero o stringa; `document_id` numero o stringa di cifre), fixture ricatturate (t64, 291 richieste, 0 MISMATCH),
+harness (`seed.sh` senza id, migrazione cercata per nome, pin 541f378), docs/README, 3 commenti in `src/`.
+
+**Non fatto / da sapere**
+- Il job Windows net48 e il pack-smoke Windows non girano su questo Mac (net48 solo compilato). Va guardata la prima CI su GitHub.
+- La ricattura e' su Azure SQL Edge (SQL Server 15): la patch `ISJSON(metadata, OBJECT)` vale solo per la copia `--mac`. L'esito su
+  SQL Server 2022 e' di `e2e.yml` su Ubuntu (non ancora eseguito).
+- Gli esempi della sezione "Gli id" del README usano solo API gia' provate (`From`, `Number`, `Value`, `TryParse`) ma non sono stati compilati a parte.
+- Webhook: nessuna cattura reale, `derived/` resta scritto a mano sulla forma letta nel codice del server.
+- Nessun commit/push e nessuna pubblicazione NuGet: aspettano un "vai" esplicito dell'utente (lezione 10).
+- L'istanza `filemaster-e2e` (app + SQL) e' ancora attiva su 127.0.0.1:18080: `eng/e2e/down.sh` la rimuove.

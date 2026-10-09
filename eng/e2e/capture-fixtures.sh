@@ -13,6 +13,15 @@
 # Il server cambia contratto fra ref (master vs dev: contatti, codici cartella, created_from...): lo script rileva il
 # profilo con GET /contact-categories (200 = dev) e usa il corpo giusto per le cartelle; le chiamate a rotte che il
 # ref non ha restano catturate (il 404/405 e' un risultato).
+#
+# Id (server da 541f378 in poi): interi positivi autoincrementali, numeri JSON sul filo (int per ente, account, chiave API,
+# contatto, webhook; bigint per documento e consegna webhook); nell'URL e nella query stringa sono decimali canonici
+# (042, +42, 0, doc_... = 404 not-found). I corpi di bulk/move e bulk/verify hanno document_ids come numeri JSON. Gli id
+# delle cartelle e delle categorie di contatti restano codici scelti dall'utente (stringhe). Quindi gli id presi dalle
+# risposte (jq -r) sono numeri nudi e si interpolano nei corpi SENZA virgolette.
+# Le catture nuove per i casi di id (sezione 16) stanno in fondo, cosi' la numerazione NN delle altre non si sposta.
+# Per usare un'istanza diversa da quella di run-e2e.sh (per esempio con il limite di upload largo senza riavviare la
+# principale): FILEMASTER_E2E_URL=<url> FILEMASTER_E2E_MAX_UPLOAD_BYTES=<n >= 8 MiB>.
 # Gira con bash 3.2 (macOS) e con bash 5 (Ubuntu). Richiede curl, jq, python3, unzip.
 set -euo pipefail
 # shellcheck source=_common.sh
@@ -24,7 +33,7 @@ SET=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --set) SET="$2"; shift 2 ;;
-    -h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,26p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) die "argomento sconosciuto: $1" ;;
   esac
 done
@@ -42,7 +51,9 @@ K_A="${FILEMASTER_E2E_ADMIN_KEY:-${E2E_KEY_ADMIN:-}}"
 [ -n "$SET" ] || SET="${E2E_REF_SHA:-unknown}"
 # Le catture caricano e scaricano 5 MiB (random5m.bin): con il limite basso che run-e2e.sh usa per la suite live (4 MiB)
 # diventerebbero dei 413 e le fixture direbbero un'altra cosa. Serve un server portato su con un limite largo.
-[ "${E2E_MAX_UPLOAD_BYTES:-0}" -ge 8388608 ] || die "limite di upload del server ${E2E_MAX_UPLOAD_BYTES:-?} < 8 MiB: rilancia run-e2e.sh con E2E_MAX_UPLOAD_BYTES=104857600"
+# FILEMASTER_E2E_MAX_UPLOAD_BYTES (se impostata dal chiamante, con FILEMASTER_E2E_URL verso un'altra istanza) vince su compose.env.
+MAXUP="${FILEMASTER_E2E_MAX_UPLOAD_BYTES:-${E2E_MAX_UPLOAD_BYTES:-0}}"
+[ "$MAXUP" -ge 8388608 ] || die "limite di upload del server ${MAXUP} < 8 MiB: rilancia run-e2e.sh con E2E_MAX_UPLOAD_BYTES=104857600"
 FIX="$E2E_DIR/fixtures/$SET"
 ASSETS="$E2E_WORK/capture-assets"
 rm -rf "$FIX"; mkdir -p "$FIX" "$ASSETS"
@@ -176,6 +187,11 @@ PY
 }
 MPH=(-H 'Content-Type: multipart/form-data; boundary=FMBOUND')
 
+# Id piu' alto presente prima della cattura (lista dal piu' recente): a fine corsa si cancella tutto cio' che e' piu' nuovo
+# (l'import ZIP, per esempio, lascia documenti fuori dalle cartelle e le catture successive vedrebbero elenchi diversi).
+START_MAX="$(curl -sS -H "X-API-Key: $K_R" "$BASE/documents?limit=1" | jq -r '.items[0].id // 0')"
+case "$START_MAX" in ''|*[!0-9]*) die "id massimo dei documenti non leggibile (server non raggiungibile o chiave sbagliata?): $START_MAX" ;; esac
+
 # ======================================================================================================== 0. sonde
 req healthz none GET /healthz
 req readyz none GET /readyz
@@ -189,7 +205,7 @@ req contact-categories-probe r GET /contact-categories
 PROFILE=master; [ "$STATUS" = 200 ] && PROFILE=dev
 log "profilo rilevato: $PROFILE"
 
-req err-404-request-id-echo r GET /documents/doc_abc -H 'X-Request-ID: abc-123'
+req err-404-request-id-echo r GET /documents/abc -H 'X-Request-ID: abc-123'
 req err-401-request-id-echo none GET /tenant -H 'X-Request-ID: abc-123'
 req err-400-request-id-bad r GET '/documents?limit=0' -H 'X-Request-ID: bad id/<>;;"x'
 
@@ -245,7 +261,7 @@ if [ "$PROFILE" = dev ]; then
   F2="FATTURE.2027"
   req folders-list-after-patch-code r GET "/folders?parent_id=$F1"
 else
-  req err-404-folder-parent-unknown w POST /folders "${J[@]}" -d '{"name":"Orfana","parent_id":"fld_01ARZ3NDEKTSV4RRFFQ69G5FAV"}'
+  req err-404-folder-parent-unknown w POST /folders "${J[@]}" -d '{"name":"Orfana","parent_id":"NESSUNA"}'
 fi
 req err-404-folder-list-parent-malformed r GET "/folders?parent_id=%20zz%2F"
 
@@ -305,7 +321,7 @@ req err-400-upload-metadata-invalid-json w POST /documents -F "file=@$ASSETS/not
 mp "$ASSETS/body-late-meta.bin" FMBOUND 'form-data; name="file"; filename="late.bin"' application/octet-stream "$ASSETS/random5m.bin" 'after:metadata="non-un-oggetto"'
 req err-400-upload-metadata-not-object-after-5mb w POST /documents "${MPH[@]}" --data-binary "@$ASSETS/body-late-meta.bin"
 req err-404-upload-folder-malformed w POST /documents -F "file=@$ASSETS/note.txt;type=text/plain;filename=f1.txt" -F 'folder_id=doc_abc'
-req err-404-upload-folder-unknown w POST /documents -F "file=@$ASSETS/note.txt;type=text/plain;filename=f2.txt" -F 'folder_id=fld_01ARZ3NDEKTSV4RRFFQ69G5FAV'
+req err-404-upload-folder-unknown w POST /documents -F "file=@$ASSETS/note.txt;type=text/plain;filename=f2.txt" -F 'folder_id=NESSUNA'
 req err-403-upload-read-key r POST /documents -F "file=@$ASSETS/note.txt;type=text/plain;filename=f3.txt"
 req err-401-upload-nokey none POST /documents -F "file=@$ASSETS/note.txt;type=text/plain;filename=f4.txt"
 
@@ -349,10 +365,11 @@ req doc-get-nonascii-name r GET "/documents/$D6"
 req doc-get-star-filename r GET "/documents/$D7"
 req doc-get-sniffed-pdf r GET "/documents/$D9"
 req doc-get-declared-text r GET "/documents/$D11"
-req err-404-doc-malformed r GET /documents/doc_abc
-req err-404-doc-unknown-valid-looking r GET /documents/doc_01ARZ3NDEKTSV4RRFFQ69G5FAV
-req err-404-doc-lowercase-ulid r GET "/documents/$(echo "$D1" | tr '[:upper:]' '[:lower:]')"
-req err-404-doc-wrong-prefix r GET "/documents/fld_$(echo "$D1" | cut -c5-)"
+req err-404-doc-malformed r GET /documents/abc
+req err-404-doc-unknown-valid-looking r GET /documents/999999
+# D1 con zeri iniziali ("0" + numero: 042 e' 404, la forma canonica e' 42) e con "+" davanti: stesso numero, forma non canonica
+req err-404-doc-leading-zero r GET "/documents/0$D1"
+req err-404-doc-plus-sign r GET "/documents/%2B$D1"
 
 req doc-content r GET "/documents/$D1/content"
 LM="$(tr -d '\r' < "$HDRS" | awk -F': ' 'tolower($1)=="last-modified"{print $2}')"
@@ -367,46 +384,46 @@ req doc-content-star-name r GET "/documents/$D7/content"
 req doc-content-sniffed r GET "/documents/$D9/content"
 req doc-content-text r GET "/documents/$D4/content"
 req err-405-head-content r HEAD "/documents/$D1/content"
-req err-404-content-unknown r GET /documents/doc_01ARZ3NDEKTSV4RRFFQ69G5FAV/content
+req err-404-content-unknown r GET /documents/999999/content
 req doc-preview-pdf r GET "/documents/$D1/preview"
 req doc-preview-range r GET "/documents/$D1/preview" -H 'Range: bytes=0-9'
 req err-415-preview-text r GET "/documents/$D4/preview"
 req err-415-preview-5mb-octet r GET "/documents/$D12/preview"
-req err-404-preview-unknown r GET /documents/doc_01ARZ3NDEKTSV4RRFFQ69G5FAV/preview
+req err-404-preview-unknown r GET /documents/999999/preview
 
 # ======================================================================================================== 6. verifica, spostamento, cancellazione
 req doc-verify r POST "/documents/$D1/verify"
 req doc-verify-with-body r POST "/documents/$D1/verify" "${J[@]}" -d '{}'
-req err-404-verify-unknown r POST /documents/doc_01ARZ3NDEKTSV4RRFFQ69G5FAV/verify
-req docs-bulk-verify r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[\"$D1\",\"$D3\"]}"
-req docs-bulk-verify-unknown-id r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[\"$D1\",\"doc_01ARZ3NDEKTSV4RRFFQ69G5FAV\"]}"
+req err-404-verify-unknown r POST /documents/999999/verify
+req docs-bulk-verify r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[$D1,$D3]}"
+req docs-bulk-verify-unknown-id r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[$D1,999999]}"
 req docs-bulk-verify-empty r POST /documents/bulk/verify "${J[@]}" -d '{"document_ids":[]}'
-req err-400-bulk-verify-unknown-property r POST /documents/bulk/verify "${J[@]}" -d '{"ids":["x"]}'
-req docs-bulk-move w POST /documents/bulk/move "${J[@]}" -d "{\"document_ids\":[\"$D3\",\"$D4\"],\"folder_id\":\"$F2\"}"
-req docs-bulk-move-to-root w POST /documents/bulk/move "${J[@]}" -d "{\"document_ids\":[\"$D3\"],\"folder_id\":null}"
+req err-400-bulk-verify-unknown-property r POST /documents/bulk/verify "${J[@]}" -d '{"ids":[1]}'
+req docs-bulk-move w POST /documents/bulk/move "${J[@]}" -d "{\"document_ids\":[$D3,$D4],\"folder_id\":\"$F2\"}"
+req docs-bulk-move-to-root w POST /documents/bulk/move "${J[@]}" -d "{\"document_ids\":[$D3],\"folder_id\":null}"
 req doc-get-after-bulk-move r GET "/documents/$D4"
 req doc-move-to-folder w PATCH "/documents/$D1/folder" "${J[@]}" -d "{\"folder_id\":\"$F2\"}"
 req err-409-folder-delete-not-empty w DELETE "/folders/$F2"
 req doc-move-to-null w PATCH "/documents/$D1/folder" "${J[@]}" -d '{"folder_id":null}'
 req doc-move-empty-object w PATCH "/documents/$D1/folder" "${J[@]}" -d '{}'
-req err-404-move-unknown-doc w PATCH /documents/doc_01ARZ3NDEKTSV4RRFFQ69G5FAV/folder "${J[@]}" -d '{"folder_id":null}'
-req err-404-move-unknown-folder w PATCH "/documents/$D1/folder" "${J[@]}" -d '{"folder_id":"fld_01ARZ3NDEKTSV4RRFFQ69G5FAV"}'
+req err-404-move-unknown-doc w PATCH /documents/999999/folder "${J[@]}" -d '{"folder_id":null}'
+req err-404-move-unknown-folder w PATCH "/documents/$D1/folder" "${J[@]}" -d '{"folder_id":"NESSUNA"}'
 req err-400-move-unknown-property w PATCH "/documents/$D1/folder" "${J[@]}" -d '{"folderId":null}'
 req err-415-move-text-plain w PATCH "/documents/$D1/folder" -H 'Content-Type: text/plain' -d '{"folder_id":null}'
 req doc-delete w DELETE "/documents/$D2"
 req err-404-doc-delete-again w DELETE "/documents/$D2"
 req doc-get-after-delete r GET "/documents/$D2"
 req doc-get-dedup-sibling-still-ok r GET "/documents/$D1/content" -H 'Range: bytes=0-3'
-req err-404-doc-delete-malformed w DELETE /documents/doc_abc
+req err-404-doc-delete-malformed w DELETE /documents/abc
 req err-403-doc-delete-read-key r DELETE "/documents/$D1"
 
 # ======================================================================================================== 7. contatti (solo dev) e rotte inesistenti
 req contacts-list r GET /contacts
 req contact-categories-list r GET /contact-categories
 req contacts-list-q r GET '/contacts?q=acme'
-req err-404-contact-unknown r GET /contacts/con_01ARZ3NDEKTSV4RRFFQ69G5FAV
+req err-404-contact-unknown r GET /contacts/999999
 req err-404-unknown-route r GET /nope
-req err-404-unknown-route-nested r GET /documents/doc_01ARZ3NDEKTSV4RRFFQ69G5FAV/nope
+req err-404-unknown-route-nested r GET /documents/999999/nope
 req err-404-unknown-route-anon none GET /nope
 req err-405-delete-tenant a DELETE /tenant
 req err-405-put-documents a PUT /documents
@@ -433,8 +450,8 @@ req apikeys-list-after-revoke a GET /api-keys
 req err-400-apikeys-no-scopes a POST /api-keys "${J[@]}" -d '{"name":"x"}'
 req err-400-apikeys-bad-scope a POST /api-keys "${J[@]}" -d '{"name":"x","scopes":["root"]}'
 req err-400-apikeys-no-name a POST /api-keys "${J[@]}" -d '{"scopes":["read"]}'
-req err-404-apikeys-revoke-malformed a DELETE /api-keys/key_abc
-req err-404-apikeys-revoke-unknown a DELETE /api-keys/key_01ARZ3NDEKTSV4RRFFQ69G5FAV
+req err-404-apikeys-revoke-malformed a DELETE /api-keys/abc
+req err-404-apikeys-revoke-unknown a DELETE /api-keys/999999
 
 # ======================================================================================================== 9. webhook
 req webhooks-create a POST /webhooks "${J[@]}" -d '{"url":"https://example.com/hook","events":["document.uploaded","document.deleted"]}'
@@ -508,27 +525,10 @@ req err-409-folder-delete-parent-with-child w DELETE "/folders/$F1"
 req folders-delete-child w DELETE "/folders/$F2"
 req folders-delete-parent w DELETE "/folders/$F1"
 req folders-list-after-delete r GET /folders
-req err-404-folder-delete-unknown w DELETE /folders/fld_01ARZ3NDEKTSV4RRFFQ69G5FAV
+req err-404-folder-delete-unknown w DELETE /folders/NESSUNA
 req err-404-folder-delete-malformed w DELETE /folders/zz
 
-# ======================================================================================================== 14. timestamp con 0/2/4 decimali (righe seminate via SQL)
-# Il server taglia gli zeri finali (System.Text.Json): per avere fixture reali con 0, 2 e 4 cifre si inseriscono, via SQL,
-# chiavi revocate con created_at/last_used_at controllati, si elencano con GET /api-keys e si cancellano.
-if [ "${E2E_CAPTURE_TS:-1}" = 1 ]; then
-  th() { python3 -c 'import os;print("sha256:"+os.urandom(32).hex())'; }
-  TSQL="SET NOCOUNT ON;
-DECLARE @t nvarchar(32) = (SELECT id FROM tenants WHERE slug = N'${E2E_TENANT_SLUG:-e2e}');
-INSERT INTO api_keys (id, tenant_id, name, key_hash, scope, status, created_at, last_used_at) VALUES
- (N'key_00000000000000000000000TS0', @t, N'e2e-ts-0', N'$(th)', N'read', N'revoked', '2026-01-02T03:04:05', NULL),
- (N'key_00000000000000000000000TS2', @t, N'e2e-ts-2', N'$(th)', N'read', N'revoked', '2026-01-02T03:04:05.120000', '2026-02-03T04:05:06.500000'),
- (N'key_00000000000000000000000TS4', @t, N'e2e-ts-4', N'$(th)', N'read', N'revoked', '2026-01-02T03:04:05.123400', '2026-02-03T04:05:06.000100');"
-  if load_secrets 2>/dev/null && sqlcmd_run -b -d "${E2E_DB:-sharpafile}" -Q "$TSQL" >/dev/null 2>&1; then
-    req apikeys-list-timestamps a GET /api-keys
-    sqlcmd_run -b -d "${E2E_DB:-sharpafile}" -Q "DELETE FROM api_keys WHERE name LIKE N'e2e-ts-%'" >/dev/null 2>&1 || true
-  else
-    log "timestamp seminati: sqlcmd non disponibile, salto"
-  fi
-fi
+# (La sezione 14, timestamp con 0/2/4 decimali, e' spostata in fondo, dopo la 16: cosi' non sposta i numeri NN delle istanze extra.)
 
 # ======================================================================================================== 15. istanze extra: 413, 503 (archivio non configurato), /readyz 503
 if [ "${E2E_CAPTURE_EXTRA:-1}" = 1 ] && [ -n "${E2E_APP_IMAGE:-}" ] && docker image inspect "$E2E_APP_IMAGE" >/dev/null 2>&1; then
@@ -573,6 +573,122 @@ if [ "${E2E_CAPTURE_EXTRA:-1}" = 1 ] && [ -n "${E2E_APP_IMAGE:-}" ] && docker im
 else
   log "istanze extra saltate (E2E_CAPTURE_EXTRA=0 o immagine del server assente)"
 fi
+
+# ======================================================================================================== 16. id numerici: casi di confine
+# In fondo (dopo le istanze extra) perche' i numeri NN delle catture sopra restano quelli del ciclo precedente.
+# Dopo lo stop di SQL Server (sezione 15) il server principale puo' avere ancora connessioni rotte: si attende un /readyz 200.
+for i in $(seq 1 60); do curl -fsS -o /dev/null "$BASE/readyz" 2>/dev/null && break; sleep 2; done
+req doc-upload-for-id-cases w POST /documents -F "file=@$ASSETS/note.txt;type=text/plain;filename=id-cases.txt" -F 'tag=id-cases'
+[ "$STATUS" = 201 ] || die "upload per i casi id fallito (HTTP $STATUS)"
+D20="$(jbody .id)"
+req err-404-doc-zero r GET /documents/0
+req err-404-doc-negative r GET /documents/-1
+req err-404-doc-overflow-long r GET /documents/9223372036854775808
+req err-404-doc-overflow-huge r GET /documents/99999999999999999999
+req err-404-doc-plus-sign-raw r GET "/documents/+$D20"
+req err-404-doc-legacy-prefix r GET "/documents/doc_$D20"
+req err-404-doc-legacy-ulid r GET /documents/doc_01ARZ3NDEKTSV4RRFFQ69G5FAV
+req err-404-doc-decimal r GET /documents/1.0
+req err-404-doc-whitespace r GET "/documents/%20$D20"
+req err-404-doc-delete-zero w DELETE /documents/0
+req err-404-content-malformed r GET /documents/abc/content
+req err-404-preview-malformed r GET /documents/abc/preview
+req err-404-verify-malformed r POST /documents/abc/verify
+req err-404-move-malformed-doc w PATCH /documents/abc/folder "${J[@]}" -d '{"folder_id":null}'
+req err-404-move-zero-doc w PATCH /documents/0/folder "${J[@]}" -d '{"folder_id":null}'
+
+# bulk: document_ids sono numeri JSON. Una stringa NUMERICA ("123", "042") viene accettata dal server (lettura da stringa
+# di System.Text.Json); una non numerica e' 400. Id ignoto = 404 su tutto il lotto di verify; bulk/move ignora gli id <= 0 e gli ignoti.
+req docs-bulk-verify-single r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[$D20]}"
+req docs-bulk-verify-duplicate-id r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[$D20,$D20]}"
+req docs-bulk-verify-string-numeric-id r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[\"$D20\"]}"
+req docs-bulk-verify-string-leading-zero r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[\"0$D20\"]}"
+req err-400-bulk-verify-string-abc r POST /documents/bulk/verify "${J[@]}" -d '{"document_ids":["abc"]}'
+req err-400-bulk-verify-legacy-ulid r POST /documents/bulk/verify "${J[@]}" -d '{"document_ids":["doc_01ARZ3NDEKTSV4RRFFQ69G5FAV"]}'
+req err-400-bulk-verify-float r POST /documents/bulk/verify "${J[@]}" -d '{"document_ids":[1.5]}'
+req err-400-bulk-verify-overflow-long r POST /documents/bulk/verify "${J[@]}" -d '{"document_ids":[9223372036854775808]}'
+req err-404-bulk-verify-zero r POST /documents/bulk/verify "${J[@]}" -d '{"document_ids":[0]}'
+req err-404-bulk-verify-negative r POST /documents/bulk/verify "${J[@]}" -d "{\"document_ids\":[$D20,-1]}"
+req err-400-bulk-verify-null r POST /documents/bulk/verify "${J[@]}" -d '{"document_ids":null}'
+req err-400-bulk-verify-missing r POST /documents/bulk/verify "${J[@]}" -d '{}'
+req docs-bulk-move-ignores-nonpositive-and-unknown w POST /documents/bulk/move "${J[@]}" -d "{\"document_ids\":[$D20,0,-5,999999],\"folder_id\":null}"
+req docs-bulk-move-unknown-only w POST /documents/bulk/move "${J[@]}" -d '{"document_ids":[999999],"folder_id":null}'
+req err-400-bulk-move-empty w POST /documents/bulk/move "${J[@]}" -d '{"document_ids":[],"folder_id":null}'
+req err-400-bulk-move-string-abc w POST /documents/bulk/move "${J[@]}" -d '{"document_ids":["abc"],"folder_id":null}'
+req err-400-bulk-move-mixed-number-and-string w POST /documents/bulk/move "${J[@]}" -d "{\"document_ids\":[$D20,\"x\"],\"folder_id\":null}"
+req err-404-bulk-move-unknown-folder w POST /documents/bulk/move "${J[@]}" -d "{\"document_ids\":[$D20],\"folder_id\":\"NESSUNA\"}"
+
+# contatti: id int. Il dettaglio con un id vero (dai dati seminati), poi i filtri sender_id/recipient_id.
+req contacts-list-first r GET '/contacts?limit=1'
+CID="$(jbody '.items[0].id')"
+req contact-get r GET "/contacts/$CID"
+req err-404-contact-malformed r GET /contacts/abc
+req err-404-contact-zero r GET /contacts/0
+req err-404-contact-overflow-int r GET /contacts/2147483648
+req err-404-contact-leading-zero r GET "/contacts/0$CID"
+req err-404-contact-legacy-prefix r GET "/contacts/con_$CID"
+req docs-list-filter-sender-id r GET "/documents?sender_id=$CID"
+req docs-list-filter-recipient-id r GET "/documents?recipient_id=$CID"
+req docs-list-filter-sender-id-unknown r GET '/documents?sender_id=999999'
+req err-404-list-sender-id-malformed r GET '/documents?sender_id=bad'
+req err-404-list-sender-id-zero r GET '/documents?sender_id=0'
+req err-404-list-sender-id-leading-zero r GET "/documents?sender_id=0$CID"
+req err-404-list-sender-id-overflow-int r GET '/documents?sender_id=2147483648'
+req err-404-list-recipient-id-malformed r GET '/documents?recipient_id=bad'
+req docs-list-filter-recipient-id-unknown r GET '/documents?recipient_id=999999'
+req contacts-list-filter-category r GET '/contacts?category_id=E2E-FORNITORI'
+
+# chiavi API, webhook, account: id int
+req err-404-apikeys-revoke-zero a DELETE /api-keys/0
+req err-404-apikeys-revoke-leading-zero a DELETE "/api-keys/0$AK_ID"
+req err-404-apikeys-revoke-legacy-prefix a DELETE "/api-keys/key_$AK_ID"
+req err-404-webhooks-delete-malformed a DELETE /webhooks/abc
+req err-404-webhooks-delete-unknown a DELETE /webhooks/999999
+req err-404-accounts-delete-malformed a DELETE /accounts/abc
+req err-404-accounts-delete-unknown a DELETE /accounts/999999
+req err-404-accounts-role-unknown a PATCH /accounts/999999/role "${J[@]}" -d '{"role":"user"}'
+req err-403-accounts-delete-write-key w DELETE /accounts/999999
+
+# cartelle: i codici restano stringhe scelte dall'utente, anche se sembrano numeri
+req folders-create-numeric-code w POST /folders "${J[@]}" -d '{"id":"42","name":"Codice numerico"}'
+req folders-get-numeric-code-in-list r GET /folders
+req err-409-folders-numeric-code-duplicate w POST /folders "${J[@]}" -d '{"id":"42","name":"Codice numerico"}'
+req folders-delete-numeric-code w DELETE /folders/42
+req err-400-folders-code-with-space w POST /folders "${J[@]}" -d '{"id":"a b","name":"X"}'
+req err-404-upload-folder-invalid-code w POST /documents -F "file=@$ASSETS/note.txt;type=text/plain;filename=f5.txt" -F 'folder_id=a b'
+
+req doc-delete-id-cases w DELETE "/documents/$D20"
+
+# ======================================================================================================== 14. timestamp con 0/2/4 decimali (righe seminate via SQL)
+# Il server taglia gli zeri finali (System.Text.Json): per avere fixture reali con 0, 2 e 4 cifre si inseriscono, via SQL,
+# chiavi revocate con created_at/last_used_at controllati, si elencano con GET /api-keys e si cancellano.
+# L'id della chiave lo assegna IDENTITY (non si nomina nell'INSERT); le righe si riconoscono dal nome.
+if [ "${E2E_CAPTURE_TS:-1}" = 1 ]; then
+  th() { python3 -c 'import os;print("sha256:"+os.urandom(32).hex())'; }
+  TSQL="SET NOCOUNT ON;
+DECLARE @t int = (SELECT id FROM tenants WHERE slug = N'${E2E_TENANT_SLUG:-e2e}');
+INSERT INTO api_keys (tenant_id, name, key_hash, scope, status, created_at, last_used_at) VALUES
+ (@t, N'e2e-ts-0', N'$(th)', N'read', N'revoked', '2026-01-02T03:04:05', NULL),
+ (@t, N'e2e-ts-2', N'$(th)', N'read', N'revoked', '2026-01-02T03:04:05.120000', '2026-02-03T04:05:06.500000'),
+ (@t, N'e2e-ts-4', N'$(th)', N'read', N'revoked', '2026-01-02T03:04:05.123400', '2026-02-03T04:05:06.000100');"
+  TS_OUT="$(sqlcmd_run -b -d "${E2E_DB:-sharpafile}" -Q "$TSQL" 2>&1)" && TS_OK=1 || TS_OK=0
+  if [ "$TS_OK" = 1 ]; then
+    req apikeys-list-timestamps a GET /api-keys
+    sqlcmd_run -b -d "${E2E_DB:-sharpafile}" -Q "DELETE FROM api_keys WHERE name LIKE N'e2e-ts-%'" >/dev/null 2>&1 || log "ATTENZIONE: righe e2e-ts-* non cancellate"
+  else
+    log "timestamp seminati: SQL fallito, salto: $(printf '%s' "$TS_OUT" | tail -n 3)"
+  fi
+fi
+
+# ======================================================================================================== 17. pulizia
+# Cancella i documenti creati dalla corsa (id > START_MAX): il server resta come l'ha lasciato il seed.
+for _ in 1 2 3 4 5 6 7 8; do
+  LEFT="$(curl -sS -H "X-API-Key: $K_R" "$BASE/documents?limit=200" | jq -r --argjson m "$START_MAX" '.items[] | select(.id > $m) | .id')"
+  [ -n "$LEFT" ] || break
+  for id in $LEFT; do curl -sS -o /dev/null -X DELETE -H "X-API-Key: $K_W" "$BASE/documents/$id"; done
+done
+LEFT="$(curl -sS -H "X-API-Key: $K_R" "$BASE/documents?limit=200" | jq -r --argjson m "$START_MAX" '[.items[] | select(.id > $m)] | length')"
+[ "$LEFT" = 0 ] || log "ATTENZIONE: $LEFT documenti della corsa non cancellati"
 
 # ======================================================================================================== autocontrollo
 # Convenzione: "NN-err-CCC-..." garantisce lo stato CCC (se il ref lo produce); gli altri nomi con stato non 2xx/3xx sono

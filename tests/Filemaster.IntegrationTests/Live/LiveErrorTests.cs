@@ -11,7 +11,7 @@ namespace Filemaster.IntegrationTests.Live;
 [Trait("Category", "Live")]
 public sealed class LiveErrorTests
 {
-    private static readonly DocumentId UnknownDocument = new("doc_00000000000000000000000000");
+    private static readonly DocumentId UnknownDocument = DocumentId.From(long.MaxValue);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -65,7 +65,7 @@ public sealed class LiveErrorTests
         await Assert.ThrowsAsync<NotFoundException>(() => client.Documents.OpenContentAsync(UnknownDocument, cancellationToken: Ct));
         await Assert.ThrowsAsync<NotFoundException>(() => client.Documents.OpenPreviewAsync(UnknownDocument, Ct));
         await Assert.ThrowsAsync<NotFoundException>(() => client.Documents.MoveAsync(UnknownDocument, null, Ct));
-        await Assert.ThrowsAsync<NotFoundException>(() => client.Contacts.GetAsync(new ContactId("con_00000000000000000000000000"), Ct));
+        await Assert.ThrowsAsync<NotFoundException>(() => client.Contacts.GetAsync(ContactId.From(int.MaxValue), Ct));
         await Assert.ThrowsAsync<NotFoundException>(() => client.Folders.DeleteAsync(UniqueFolder("NONE"), Ct));
         await Assert.ThrowsAsync<NotFoundException>(
             () => client.Folders.UpdateAsync(UniqueFolder("NONE"), new UpdateFolderRequest { Name = "x" }, Ct));

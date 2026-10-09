@@ -37,7 +37,7 @@ public sealed class TransportUploadTests
             readsBefore = source.ReadCalls;
             declaredLength = request.Content!.Headers.ContentLength;
             received = await request.Content.ReadAsByteArrayAsync();
-            return Reply.Json(201, "{\"id\":\"doc_X\",\"deduplicated\":false}");
+            return Reply.Json(201, "{\"id\":42,\"deduplicated\":false}");
         });
 
         var response = await rig.Transport.SendUploadAsync(UploadRequest(source), default);
@@ -46,7 +46,7 @@ public sealed class TransportUploadTests
         Assert.Equal(0, readsBefore); // il trasporto non ha toccato lo stream
         Assert.Null(declaredLength); // nessuna lunghezza: il corpo non e' stato misurato leggendolo
         Assert.Equal(data, received);
-        Assert.Contains("doc_X", System.Text.Encoding.UTF8.GetString(response.Body), StringComparison.Ordinal);
+        Assert.Contains("42", System.Text.Encoding.UTF8.GetString(response.Body), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -18,7 +18,7 @@ internal static class VerifyWire
             context,
             "verifica",
             check => new IntegrityCheck(
-                check.RequiredId<DocumentId>("document_id", DocumentId.TryParse, "un id di documento"),
+                check.RequiredNumericId<DocumentId>("document_id", DocumentId.TryParse, "un id di documento"),
                 check.RequiredSha256("sha256"),
                 check.RequiredBool("ok"),
                 check.OptionalString("detail"),

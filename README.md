@@ -1,14 +1,15 @@
 # Filemaster
 
 Filemaster e' la libreria client .NET per l'API HTTP di **Sharp-a-File**, il server di archiviazione documentale (con le
-funzioni di migrazione da ARXivar). Nasconde l'API "nuda" del server (JSON snake_case, ID prefissati, cursori opachi,
+funzioni di migrazione da ARXivar). Nasconde l'API "nuda" del server (JSON snake_case, ID numerici, cursori opachi,
 upload multipart, errori `problem+json`, webhook firmati HMAC) dietro interfacce tipizzate, con tempi, ritentativi e
 controlli d'integrita' gia' decisi. E' pensata per i gestionali che archiviano documenti: ASP.NET Core, ma anche
 applicazioni .NET Framework 4.8 in C# 7.3 o VB.NET.
 
 > **Stato: 0.x.** L'API pubblica puo' ancora cambiare tra una versione minore e l'altra. Il client e' scritto contro
-> Sharp-a-File ramo `dev` (commit `8aec8bb`): il ramo `master` (`v1.0.x`) non ha codici cartella, `PATCH /folders` e
-> contatti. Vedi [Stato e roadmap](#stato-e-roadmap).
+> Sharp-a-File ramo `master` (commit `541f378`), dove documenti, contatti ed enti hanno id **numerici** (interi positivi,
+> non piu' gli ULID con prefisso `doc_...`, `con_...`): `DocumentId`, `ContactId` e `TenantId` sono numeri e rifiutano il
+> vecchio formato. Vedi [Stato e roadmap](#stato-e-roadmap).
 
 ## Compatibilita'
 
@@ -26,6 +27,10 @@ applicazioni .NET Framework 4.8 in C# 7.3 o VB.NET.
 - Non serve `init` ne' `with`: i tipi di input (`FilemasterOptions`, `UploadDocumentRequest`, `DocumentQuery`,
   `ContactQuery`, richieste delle cartelle) sono classi con costruttore e proprieta' `get; set;`; i risultati sono
   in sola lettura. Un test di forma impedisce `init` sui tipi pubblici dell'Application.
+
+**Server**: Sharp-a-File ramo `master`, commit `541f378` (contratto descritto in
+[docs/api-contract.md](https://github.com/Vinello28/Filemaster/blob/main/docs/api-contract.md)). Gli id sono numeri: un
+Sharp-a-File con il vecchio formato (`doc_...`, ULID con prefisso) non e' supportato.
 
 ## Quale pacchetto, dove
 
@@ -79,7 +84,7 @@ app.MapGet("/documenti/{id}", async (string id, IDocumentStore documents, Cancel
     }
 
     Document document = await documents.GetAsync(documentId, ct);
-    return Results.Ok(new { id = document.Id.Value, document.OriginalFilename, document.SizeBytes });
+    return Results.Ok(new { id = document.Id.Number, document.OriginalFilename, document.SizeBytes });
 });
 
 app.Run();
@@ -276,6 +281,31 @@ La verifica ha effetti sul server (storico e, se negativa, evento webhook `docum
 scrittura non si ritenta da sola. `MoveManyAsync` ignora gli id sconosciuti e restituisce quanti ne ha spostati;
 `VerifyManyAsync` fallisce l'intero lotto con `NotFoundException` se un id non esiste.
 
+### Gli id
+
+Il server identifica documenti, contatti ed enti con interi positivi (`bigint` per i documenti, `int` per gli altri): sul filo
+sono numeri JSON, negli indirizzi decimali canonici (`/documents/42`). `DocumentId`, `ContactId` e `TenantId` li incapsulano e
+rifiutano subito, con `ArgumentException` e senza toccare la rete, tutto cio' che il server risponderebbe con un 404: testo vuoto,
+segno, zeri iniziali (`042`), spazi, lettere, il vecchio formato `doc_...`, zero e valori fuori intervallo.
+
+```csharp
+DocumentId id = DocumentId.From(42);        // da un numero maggiore di zero (altrimenti ArgumentOutOfRangeException)
+long number = id.Number;                    // 42
+string text = id.Value;                     // "42": il decimale canonico, quello degli indirizzi
+bool valid = DocumentId.TryParse("042", out id); // falso: zeri iniziali; id diventa default (vuoto, non valido)
+```
+
+In VB.NET:
+
+```vb
+Dim id As DocumentId = DocumentId.From(42)
+Dim number As Long = id.Number
+Dim text As String = id.Value
+```
+
+`default(DocumentId)` e' l'id vuoto (`Value` e' la stringa vuota) e non si puo' passare ai metodi. Le cartelle e le categorie di
+contatti non sono numeri: hanno un codice di testo scelto da chi le crea (`FolderCode`).
+
 ### Cartelle e contatti
 
 ```csharp
@@ -394,7 +424,8 @@ Fuori da ASP.NET Core (per esempio un handler ASP.NET classico in VB.NET) i pass
 Regole da tenere:
 
 - la consegna e' "almeno una volta": si deduplica per `DeliveryId`, letto dal corpo verificato (l'header
-  `X-SharpAFile-Delivery` non e' coperto dalla firma);
+  `X-SharpAFile-Delivery` non e' coperto dalla firma); `DeliveryId` e' un testo (le cifre del numero che il server manda in
+  `delivery_id`), mentre `DocumentId` degli eventi e' un `DocumentId` numerico;
 - un evento sconosciuto o con un payload inatteso arriva come `UnknownWebhookEvent` e va confermato con un 2xx,
   altrimenti il server ritenta;
 - la tolleranza sull'orario della firma e' 5 minuti per default
@@ -497,6 +528,9 @@ libreria rifiuta un `HttpClientHandler` o `SocketsHttpHandler` che li abiliti.
 ## Stato e roadmap
 
 - **0.1.x (fase A)**: documenti, cartelle, contatti (sola lettura), ente, sonde di salute, ricezione dei webhook.
+  Contratto del server: Sharp-a-File `master` `541f378`, con id numerici. Il passaggio dagli ULID con prefisso agli interi ha
+  cambiato `DocumentId`, `ContactId` e `TenantId` (ora numeri: `Value`, `Number`, `From`) e il parser dei webhook (`delivery_id`
+  e `document_id` numerici); nessuna versione era ancora uscita, quindi non c'e' una compatibilita' da mantenere.
 - **0.2.0 (fase B, pianificata)**: amministrazione (account, chiavi API, abbonamenti webhook), audit, import ed export
   ZIP, rotazione della chiave API senza riavvio.
 - Finche' la libreria e' in 0.x, aggiungere un metodo a una porta e' una modifica incompatibile per chi la implementa

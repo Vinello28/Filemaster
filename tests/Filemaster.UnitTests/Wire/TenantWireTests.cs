@@ -16,14 +16,14 @@ public sealed class TenantWireTests
     [Fact]
     public void The_captured_tenant_is_read_field_by_field()
     {
-        // 03-tenant: {"id":"ten_01M3VCWS5PAKMSC47JNJ1PTFJQ","slug":"acme-test","name":"Acme Test","status":"active","created_at":"2026-10-01T09:59:09.501341Z"}
+        // 03-tenant: {"id":1,"slug":"acme-test","name":"Acme Test","status":"active","created_at":"2026-10-09T11:00:45.098964Z"}
         var tenant = Read(Captured());
 
-        Assert.Equal(new TenantId("ten_01M3VCWS5PAKMSC47JNJ1PTFJQ"), tenant.Id);
+        Assert.Equal(new TenantId("1"), tenant.Id);
         Assert.Equal("acme-test", tenant.Slug);
         Assert.Equal("Acme Test", tenant.Name);
         Assert.Equal(TenantStatus.Active, tenant.Status);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 9, 5013410), tenant.CreatedAt);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 0, 45, 989640), tenant.CreatedAt);
     }
 
     [Fact]
@@ -74,7 +74,9 @@ public sealed class TenantWireTests
     }
 
     [Theory]
-    [InlineData("id", "5")]
+    [InlineData("id", "\"5\"")]
+    [InlineData("id", "true")]
+    [InlineData("id", "[]")]
     [InlineData("slug", "5")]
     [InlineData("name", "[]")]
     [InlineData("created_at", "true")]
@@ -84,14 +86,27 @@ public sealed class TenantWireTests
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("ten_abc")]
-    [InlineData("doc_01M3VCWS5PAKMSC47JNJ1PTFJQ")]
-    [InlineData("ten_01m3vcws5pakmsc47jnj1ptfjq")]
-    [InlineData("ten_01M3VCWS5PAKMSC47JNJ1PTFJQ ")]
-    public void An_invalid_tenant_id_is_not_interpretable(string id)
+    [InlineData("\"1\"")] // l'id e' un numero JSON: lo stesso valore scritto come testo non e' valido
+    [InlineData("\"\"")]
+    [InlineData("\"ten_01M3VCWS5PAKMSC47JNJ1PTFJQ\"")] // il vecchio formato con prefisso e ULID
+    [InlineData("1.5")]
+    [InlineData("1.0")]
+    [InlineData("1e0")]
+    [InlineData("-1")]
+    [InlineData("0")]
+    [InlineData("2147483648")] // oltre int.MaxValue: l'id di un ente e' un int
+    [InlineData("99999999999999999999")]
+    public void An_invalid_tenant_id_is_not_interpretable(string rawJson)
     {
-        WireTest.Unexpected(() => Read(Variants.With(Captured(), "id", "\"" + id + "\"")));
+        var exception = WireTest.Unexpected(() => Read(Variants.With(Captured(), "id", rawJson)));
+
+        Assert.Contains("ente.id", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_largest_tenant_id_is_int_MaxValue()
+    {
+        Assert.Equal(new TenantId("2147483647"), Read(Variants.With(Captured(), "id", "2147483647")).Id);
     }
 
     [Fact]

@@ -160,7 +160,7 @@ public sealed class FilemasterOptionsTests
     [Theory]
     [InlineData("https://filemaster.example.test", "documents", "https://filemaster.example.test/documents")]
     [InlineData("https://filemaster.example.test/proxy", "documents", "https://filemaster.example.test/proxy/documents")]
-    [InlineData("https://filemaster.example.test/proxy/", "documents/doc_X/content", "https://filemaster.example.test/proxy/documents/doc_X/content")]
+    [InlineData("https://filemaster.example.test/proxy/", "documents/42/content", "https://filemaster.example.test/proxy/documents/42/content")]
     [InlineData("https://filemaster.example.test/a/b", "folders?parent_id=FATTURE", "https://filemaster.example.test/a/b/folders?parent_id=FATTURE")]
     [InlineData("https://filemaster.example.test/proxy", "documents?created_from=2026-01-01T10:00:00Z", "https://filemaster.example.test/proxy/documents?created_from=2026-01-01T10:00:00Z")]
     public void A_relative_path_without_a_leading_slash_keeps_the_path_prefix_of_the_normalized_address(string address, string relative, string expected)

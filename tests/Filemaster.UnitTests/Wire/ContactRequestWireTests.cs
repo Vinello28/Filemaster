@@ -94,7 +94,7 @@ public sealed class ContactRequestWireTests
     [Fact]
     public void The_contact_route_and_the_categories_route_are_fixed()
     {
-        Assert.Equal("contacts/con_01M3VEF0K9Z8X7Y6W5V4T3S2R1", Routes.Contact(new ContactId("con_01M3VEF0K9Z8X7Y6W5V4T3S2R1")));
+        Assert.Equal("contacts/7", Routes.Contact(new ContactId("7")));
         Assert.Equal("contact-categories", Routes.ContactCategories);
     }
 }

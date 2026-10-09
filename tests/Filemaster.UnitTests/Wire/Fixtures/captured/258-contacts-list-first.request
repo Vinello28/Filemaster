@@ -1,0 +1,2 @@
+GET /contacts?limit=1
+# auth: X-API-Key (scope read)

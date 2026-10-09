@@ -12,7 +12,7 @@ namespace Filemaster.Infrastructure;
 /// <item><description><c>metadata</c> si COPIA (<c>Clone()</c>) prima che il documento JSON sia smaltito, e se manca (o e' <c>null</c>) diventa <c>{}</c>, mai <c>default</c>.</description></item>
 /// <item><description><c>has_content</c> si ignora del tutto (anche se ha il tipo sbagliato o contraddice <c>sha256</c>): <see cref="Document.HasContent"/> e' derivato da <see cref="Document.Sha256"/>.</description></item>
 /// <item><description><c>contacts</c> assente (o <c>null</c>) e' passato come null: il <see cref="Document"/> ne fa una lista vuota.</description></item>
-/// <item><description>Ogni id si legge con il <c>TryParse</c> del tipo forte: un id non valido e' una risposta non interpretabile.</description></item>
+/// <item><description>Ogni id si legge con il <c>TryParse</c> del tipo forte: un id non valido e' una risposta non interpretabile. Gli id di documento e di contatto sono NUMERI JSON interi (<c>"id":42</c>), il codice di cartella un testo.</description></item>
 /// <item><description><c>sha256</c> deve essere di 64 cifre esadecimali minuscole, <c>size_bytes</c> non negativo: chi verifica il contenuto si fida di questi valori.</description></item>
 /// </list>
 /// </summary>
@@ -202,7 +202,8 @@ internal static class DocumentWire
         writer.WriteStartArray("document_ids");
         foreach (var id in ids)
         {
-            writer.WriteStringValue(id.Value);
+            // Numeri JSON, non testi: il server accetta anche le stringhe numeriche, ma il suo contratto e' il numero.
+            writer.WriteNumberValue(id.Number);
         }
 
         writer.WriteEndArray();
@@ -223,7 +224,7 @@ internal static class DocumentWire
 
     private static Document ReadDocument(WireObject document) =>
         new(
-            document.RequiredId<DocumentId>("id", DocumentId.TryParse, "un id di documento"),
+            document.RequiredNumericId<DocumentId>("id", DocumentId.TryParse, "un id di documento"),
             document.OptionalId<FolderCode>("folder_id", FolderCode.TryParse, "un codice di cartella"),
             document.RequiredString("original_filename"),
             document.RequiredString("mime_type"),
@@ -240,7 +241,7 @@ internal static class DocumentWire
     private static DocumentContact ReadContact(WireObject contact) =>
         new(
             RoleOf(contact.OptionalString("role")),
-            contact.RequiredId<ContactId>("id", ContactId.TryParse, "un id di contatto"),
+            contact.RequiredNumericId<ContactId>("id", ContactId.TryParse, "un id di contatto"),
             contact.RequiredString("name"));
 
     // Confronto ordinale. Assente o non riconosciuto e' Unknown (e' il default dell'enum).

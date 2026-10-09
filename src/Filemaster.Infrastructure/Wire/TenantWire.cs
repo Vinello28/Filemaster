@@ -18,7 +18,7 @@ internal static class TenantWire
             context,
             "ente",
             tenant => new Tenant(
-                tenant.RequiredId<TenantId>("id", TenantId.TryParse, "un id di ente"),
+                tenant.RequiredNumericId<TenantId>("id", TenantId.TryParse, "un id di ente"),
                 tenant.RequiredString("slug"),
                 tenant.RequiredString("name"),
                 StatusOf(tenant.OptionalString("status")),

@@ -88,7 +88,10 @@ if [ "$NO_BUILD" != "1" ]; then
     # azure-sql-edge e' SQL Server 15.0: non conosce ISJSON(x, OBJECT) (SQL Server 2022). Solo nella COPIA: la
     # migrazione iniziale usa quel vincolo CHECK; il modello/snapshot EF restano invariati (EF confronta modello e
     # snapshot, non il database), quindi `migrate` non rileva differenze.
-    migration="$CTX/src/SharpAFile.Infrastructure/Persistence/Migrations/20260923172733_InitialSchema.cs"
+    # Il nome ha un timestamp che cambia se il server rigenera la migrazione: si cerca, non si fissa. Il Designer.cs
+    # contiene solo metadati del modello e non si tocca.
+    migration="$(find "$CTX/src/SharpAFile.Infrastructure/Persistence/Migrations" -name '*_InitialSchema.cs' ! -name '*.Designer.cs')"
+    [ -n "$migration" ] && [ "$(printf '%s\n' "$migration" | wc -l)" -eq 1 ] || die "--mac: attesa una sola migrazione *_InitialSchema.cs, trovate: ${migration:-nessuna}"
     grep -q 'ISJSON(metadata, OBJECT) = 1' "$migration" || die "--mac: ISJSON(metadata, OBJECT) non trovato in $migration"
     sed -i.bak 's/ISJSON(metadata, OBJECT) = 1/ISJSON(metadata) = 1/' "$migration"
     rm -f "$migration.bak"

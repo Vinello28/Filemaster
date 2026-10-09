@@ -6,7 +6,7 @@ using Filemaster.UnitTests.Wire;
 namespace Filemaster.UnitTests.Infrastructure.Resources;
 
 /// <summary>
-/// L'adapter delle sonde: <c>GET /healthz</c> e <c>GET /readyz</c> <b>senza chiave API</b> (come le catture 01, 02 e 224), il 503 di
+/// L'adapter delle sonde: <c>GET /healthz</c> e <c>GET /readyz</c> <b>senza chiave API</b> (come le catture 01, 02 e 223), il 503 di
 /// <c>/readyz</c> come esito (mai eccezione, mai ritentato), e la mappatura delle risposte che la sonda non prevede: un corpo che non e'
 /// quello della sonda con 200 e' <see cref="UnexpectedResponseException"/>, con 503 e' un errore del server
 /// (<see cref="ServerErrorException"/>); gli altri 5xx seguono le regole comuni (502/503/504 di un proxy ritentati, 500 no).
@@ -118,16 +118,16 @@ public sealed class HttpFilemasterHealthTests
     }
 
     [Fact]
-    public async Task The_503_of_capture_224_is_an_outcome_not_an_exception_and_is_not_retried()
+    public async Task The_503_of_capture_223_is_an_outcome_not_an_exception_and_is_not_retried()
     {
         using var rig = new ResourceRig();
-        rig.Then(() => FixtureReply.Json("224-readyz-503-db-down"));
+        rig.Then(() => FixtureReply.Json("223-readyz-503-db-down"));
         rig.Then(() => FixtureReply.Json("02-readyz"));
         rig.Then(() => FixtureReply.Json("02-readyz"));
 
         var result = await rig.Health.CheckReadinessAsync();
 
-        Assert.Equal(503, WireFixtures.Status("224-readyz-503-db-down"));
+        Assert.Equal(503, WireFixtures.Status("223-readyz-503-db-down"));
         Assert.Equal(new HealthProbeResult(false, "unavailable", "database non raggiungibile"), result);
         Assert.Single(rig.Sent);
         Assert.Empty(rig.Rig.Delays.Delays);
@@ -232,7 +232,7 @@ public sealed class HttpFilemasterHealthTests
     {
         using var rig = new ResourceRig();
         rig.Then(() => Reply.Text(status));
-        rig.Then(() => FixtureReply.Json("224-readyz-503-db-down"));
+        rig.Then(() => FixtureReply.Json("223-readyz-503-db-down"));
 
         var result = await rig.Health.CheckReadinessAsync();
 

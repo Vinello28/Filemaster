@@ -72,8 +72,8 @@ public sealed class LiveContactTests
         }
 
         Assert.Equal(
-            page.Items.Select(c => c.Id.Value).OrderBy(id => id, StringComparer.Ordinal),
-            enumerated.Select(c => c.Id.Value).OrderBy(id => id, StringComparer.Ordinal));
+            page.Items.Select(c => c.Id.Number).OrderBy(id => id),
+            enumerated.Select(c => c.Id.Number).OrderBy(id => id));
 
         var detail = await client.Contacts.GetAsync(external.Id, Ct);
         Assert.Equal(external.Id, detail.Id);
@@ -107,8 +107,8 @@ public sealed class LiveContactTests
         Assert.Equal(external.Id, sender.ContactId);
         Assert.Equal(LiveSeed.ExternalName, sender.Name);
         Assert.Equal(
-            new[] { group.Id.Value, user.Id.Value }.OrderBy(id => id, StringComparer.Ordinal),
-            document.Contacts.Where(c => c.Role == ContactRole.Recipient).Select(c => c.ContactId.Value).OrderBy(id => id, StringComparer.Ordinal));
+            new[] { group.Id.Number, user.Id.Number }.OrderBy(id => id),
+            document.Contacts.Where(c => c.Role == ContactRole.Recipient).Select(c => c.ContactId.Number).OrderBy(id => id));
 
         var bySender = await client.Documents.ListAsync(new DocumentQuery { SenderId = external.Id }, cancellationToken: Ct);
         Assert.Contains(bySender.Items, d => d.Id == seeded.Id);

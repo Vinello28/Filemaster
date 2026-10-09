@@ -13,7 +13,7 @@ namespace Filemaster.UnitTests.Infrastructure.Resources;
 internal sealed class ResourceRig : IDisposable
 {
     /// <summary>L'id del contatto della fixture derivata <c>contact-detail</c>.</summary>
-    internal static readonly ContactId Contact = new("con_01M3VEF0P1Q2R3S4T5V6W7X8Y9");
+    internal static readonly ContactId Contact = new("12");
 
     internal ResourceRig(Action<FilemasterOptions>? configure = null)
     {

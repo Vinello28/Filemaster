@@ -25,11 +25,12 @@ public sealed class HttpTenantInfoTests
         Assert.Equal("application/json", sent.Header("Accept"));
         Assert.Equal(TransportRig.Key, sent.Header("X-API-Key"));
         Assert.Null(sent.Body);
-        Assert.Equal("ten_01M3VCWS5PAKMSC47JNJ1PTFJQ", tenant.Id.Value);
+        Assert.Equal("1", tenant.Id.Value);
+        Assert.Equal(1, tenant.Id.Number);
         Assert.Equal("acme-test", tenant.Slug);
         Assert.Equal("Acme Test", tenant.Name);
         Assert.Equal(TenantStatus.Active, tenant.Status);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 9, 5013410), tenant.CreatedAt);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 0, 45, 989640), tenant.CreatedAt);
     }
 
     [Fact]

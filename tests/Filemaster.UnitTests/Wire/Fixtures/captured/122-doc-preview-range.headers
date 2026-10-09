@@ -1,10 +1,10 @@
 Content-Length: 10
 Content-Type: application/pdf
-Date: Thu, 01 Oct 2026 09:59:21 GMT
+Date: Fri, 09 Oct 2026 11:11:14 GMT
 Accept-Ranges: bytes
 Content-Range: bytes 0-9/590
-Last-Modified: Thu, 01 Oct 2026 09:59:15 GMT
-X-Request-ID: 0fd632f6479fa3c3
+Last-Modified: Fri, 09 Oct 2026 11:11:07 GMT
+X-Request-ID: 47c0785359be3d0b
 Content-Disposition: inline; filename="fattura.pdf"; filename*=UTF-8''fattura.pdf
 Content-Security-Policy: default-src 'none'; sandbox
 X-Content-Type-Options: nosniff

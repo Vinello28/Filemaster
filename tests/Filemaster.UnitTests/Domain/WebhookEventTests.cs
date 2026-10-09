@@ -10,11 +10,11 @@ namespace Filemaster.UnitTests.Domain;
 /// </summary>
 public sealed class WebhookEventTests
 {
-    private const string DeliveryId = "whd_01M3VEESG5KBYR5PYAJ0TDT4B2";
+    private const string DeliveryId = "5000000007"; // numero (bigint) sul server attuale, tenuto come stringa: chiave di idempotenza
     private const string Sha = "cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e";
 
     private static readonly DateTimeOffset Occurred = new(2026, 10, 1, 9, 59, 15, 205, TimeSpan.Zero);
-    private static readonly DocumentId DocId = new("doc_01M3VEESG5KBYR5PYAJ0TDT4B2");
+    private static readonly DocumentId DocId = new("5000000042");
 
     [Fact]
     public void WebhookEvent_is_an_abstract_record_with_exactly_four_sealed_derived_types()
@@ -97,7 +97,7 @@ public sealed class WebhookEventTests
     [Fact]
     public void UnknownWebhookEvent_keeps_the_raw_event_type_and_the_payload()
     {
-        using var payload = JsonDocument.Parse("""{"document_id":"doc_x","extra":[1,2,3],"nested":{"a":null}}""");
+        using var payload = JsonDocument.Parse("""{"document_id":"x","extra":[1,2,3],"nested":{"a":null}}""");
 
         WebhookEvent e = new UnknownWebhookEvent(DeliveryId, Occurred, "document.renamed", payload.RootElement);
 
@@ -107,7 +107,7 @@ public sealed class WebhookEventTests
         Assert.Equal("document.renamed", unknown.EventType); // la stringa del server, mai interpretata
         Assert.Equal(JsonValueKind.Object, unknown.Payload.ValueKind);
         Assert.Equal(3, unknown.Payload.GetProperty("extra").GetArrayLength());
-        Assert.Equal("doc_x", unknown.Payload.GetProperty("document_id").GetString());
+        Assert.Equal("x", unknown.Payload.GetProperty("document_id").GetString());
     }
 
     [Fact]

@@ -61,7 +61,7 @@ regola imposta da `Directory.Build.targets` e controllata da `eng/verify-package
 | --- | --- | --- |
 | Porte e adapter (esagonale) | Porte in `Filemaster.Application` (`IDocumentStore`, `IFolderCatalog`, `IContactDirectory`, `ITenantInfo`, `IFilemasterHealth`); adapter `Http*` interni all'Infrastructure | Il codice dell'applicazione non dipende da HTTP e si testa con dei finti |
 | Facade | `IFilemasterClient` / `FilemasterClient`: un oggetto con `Documents`, `Folders`, `Contacts`, `Tenant`, `Health` | Un solo punto d'ingresso da registrare o da tenere in un campo statico |
-| Value object | `DocumentId`, `ContactId`, `TenantId`, `FolderCode` (`readonly record struct`), `ByteRange`, `PageRequest` | Un id malformato e' un `ArgumentException` locale, non un 404 dal server; niente stringhe scambiate fra loro |
+| Value object | `DocumentId`, `ContactId`, `TenantId`, `FolderCode` (`readonly record struct`), `ByteRange`, `PageRequest` | Un id malformato e' un `ArgumentException` locale, non un 404 dal server; niente stringhe scambiate fra loro. Gli id del server sono interi positivi: `DocumentId` regge un `long`, `ContactId` e `TenantId` un `int`, con `Value` (decimale canonico), `Number` e `From`; `FolderCode` resta un testo scelto dall'utente |
 | Decorator | `VerifiedContentStream` intorno allo stream di un download | Controllo di dimensione e SHA-256 senza bufferizzare, trasparente per chi legge |
 | Iterator | `EnumerateAsync` su documenti e contatti (`IAsyncEnumerable<T>`) | Pagine e cursori nascosti a chi puo' usare `await foreach`; da C# 7.3 restano `ListAsync` e il cursore |
 | Factory | `FilemasterClientFactory.Create` (senza DI), `FilemasterHttp.CreateClient` (su un `HttpClient` dato) | Il gestore HTTP giusto per runtime e un client completo in una riga, anche da VB.NET |
@@ -240,8 +240,9 @@ I test usano xUnit v3 su Microsoft.Testing.Platform. Girano su net8.0 e net10.0,
   webhook), `Infrastructure` (trasporto, opzioni, mappatura errori, adapter `Documents` e `Resources`), `Wire` e
   `Composition`. Il trasporto si prova con gestori finti: ritentativi, scadenze, segreti, download e upload.
 - **Fixture golden** (`tests/Filemaster.UnitTests/Wire/Fixtures/`):
-  - 174 risposte **catturate** da un Sharp-a-File vero (ramo `dev`, commit `8aec8bb`) e ripulite dai dati sensibili;
-  - 8 risposte **derivate** dal codice del server, dove una cattura non esiste.
+  - 63 risposte **catturate** da un Sharp-a-File vero (ramo `master`, commit `541f378`, cattura `t64` del 2026-10-09) e ripulite
+    dai dati sensibili;
+  - 9 risposte **derivate** dal codice del server, dove una cattura non esiste.
 
   I test di lettura confrontano le fixture con valori scritti a mano. I costruttori di richieste si confrontano con il
   corpo che il server ha accettato. Il `README.md` della cartella spiega provenienza e scrub.
@@ -276,8 +277,9 @@ I test usano xUnit v3 su Microsoft.Testing.Platform. Girano su net8.0 e net10.0,
   `eng/docker-replay.sh` ripete il job Linux in un container, partendo da una copia pulita.
 - **End-to-end live** (`tests/Filemaster.IntegrationTests/Live/`, `Category=Live`): una suite opzionale contro un
   Sharp-a-File vero, attivata da `FILEMASTER_E2E_URL` (+ `_KEY`, `_READ_KEY`, `_ADMIN_KEY`). Il server lo porta su
-  `eng/e2e/run-e2e.sh`; `.github/workflows/e2e.yml` la esegue di notte. Verde su net8 e net10 il 2026-10-03 (macOS, Azure SQL
-  Edge); i risultati sono in [api-contract.md](api-contract.md), "Test contro il server vero".
+  `eng/e2e/run-e2e.sh`; `.github/workflows/e2e.yml` la esegue di notte. Verde su net8 e net10 il 2026-10-09 (macOS, Azure SQL
+  Edge) contro il server con gli id numerici (`541f378`), filtri dei documenti compresi. I risultati sono in
+  [api-contract.md](api-contract.md), "Test contro il server vero".
 
 ## Cosa non e' ancora verificato
 
@@ -290,6 +292,6 @@ I test usano xUnit v3 su Microsoft.Testing.Platform. Girano su net8.0 e net10.0,
   percorso con SQL Server 2022 su Ubuntu e' `e2e.yml`, non ancora eseguito su GitHub.
 - **Comportamenti del server letti nel codice e non misurati.** Esempi: `/readyz` con il database giu' (lezione 44) e
   gli scenari elencati in [api-contract.md](api-contract.md).
-- **Server di riferimento.** Il client e' scritto contro Sharp-a-File ramo `dev` (`8aec8bb`). Il ramo `master`
-  (`v1.0.x`) non ha codici cartella, `PATCH /folders`, contatti, `created_from`/`created_to`, `has_content` e
-  `content-unavailable`.
+- **Server di riferimento.** Il client e' scritto contro Sharp-a-File ramo `master`, commit `541f378`, che identifica
+  documenti, contatti ed enti con interi positivi (prima, a `8aec8bb`, erano ULID con prefisso: `doc_...`, `con_...`). Un server
+  con il vecchio formato non e' piu' supportato: `new DocumentId("doc_...")` lancia `ArgumentException`.

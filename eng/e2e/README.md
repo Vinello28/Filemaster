@@ -8,7 +8,7 @@ notte, mai sulle pull request).
 | Script | Cosa fa |
 | --- | --- |
 | `run-e2e.sh` | `git archive` del ref in `.e2e/work/` -> `docker compose build` -> SQL Server -> `migrate` -> `bootstrap-admin` -> `storage-password -generate` -> `seed.sh` -> `run` -> attesa di `/healthz`, `/readyz` e `GET /tenant`. Idempotente. |
-| `seed.sh` | Via SQL, cio' che le API non sanno creare: ente `e2e`, tre chiavi (read, write, admin), una categoria di contatti, tre contatti (external, user, group) e un documento senza contenuto collegato ai contatti. |
+| `seed.sh` | Via SQL, cio' che le API non sanno creare: ente `e2e`, tre chiavi (read, write, admin), una categoria di contatti, tre contatti (external, user, group) e un documento senza contenuto collegato ai contatti. Gli id li assegna il database (vedi "Gli id nel seed"). |
 | `logs.sh <cartella>` | Log di server e database, un file per servizio (e2e.yml li carica quando qualcosa fallisce). |
 | `down.sh [--purge]` | Rimuove contenitori, volumi e rete del progetto compose `filemaster-e2e`; con `--purge` anche `.e2e/`. Non tocca le immagini. |
 
@@ -17,15 +17,27 @@ la accetta chi lancia lo script: `MSSQL_ACCEPT_EULA=Y`.
 
 ## Il server di riferimento
 
-Filemaster mira al ramo `dev` di Sharp-a-File al commit `8aec8bb78d34f70150cf7be970c4a712a9847546` (codici cartella, `PATCH
-/folders`, contatti, `created_from`/`created_to`, `has_content`: `master`/v1.0.x non li ha). `e2e.yml` lo fissa in
-`SHARPAFILE_SHA`; in locale si passa con `--ref`.
+Filemaster mira al ramo `master` di Sharp-a-File al commit `541f3789037f6543746de11d02d8388ff9b9a215`: ha i codici cartella, `PATCH
+/folders`, i contatti, `created_from`/`created_to`, `has_content` e, dal commit `7ca0e7e`, gli **id numerici** (interi positivi
+assegnati dal database; prima erano ULID con prefisso `doc_...`, e il vecchio riferimento era il ramo `dev` al commit `8aec8bb`, ora
+superato). `e2e.yml` lo fissa in `SHARPAFILE_SHA` (una corsa deve essere ripetibile, quindi lo SHA e non il ramo mobile); in locale
+si passa con `--ref`. Passando un commit precedente a `7ca0e7e` lo schema, il seed e le suite non corrispondono piu'.
+
+## Gli id nel seed
+
+Dal commit `7ca0e7e` ente, chiavi, contatti e documenti hanno id `IDENTITY` (`int`; `bigint` per i documenti), quindi `seed.sh` non
+scrive piu' gli id negli `INSERT`: li rilegge dal database per chiave naturale (slug dell'ente, hash della chiave, codice del
+contatto, proprietario + nome file del documento) e mai con `SCOPE_IDENTITY()` dopo un `IF NOT EXISTS`, che a riga gia' presente
+darebbe un valore vecchio. Il seed resta idempotente. Le categorie dei contatti e le cartelle hanno un codice di testo scelto da noi
+(`E2E-FORNITORI`, `FATTURE`). La suite live non assume id fissi: riconosce i dati seminati per codice, nome o id ARXivar (`LiveSeed.cs`) e legge gli id dalle risposte. Lo schema e' la migrazione unica
+`20261008193649_InitialSchema`, riscritta da zero nel server: un database creato con le migrazioni vecchie non serve, va ricreato
+(`down.sh`, che toglie anche i volumi del progetto compose).
 
 ## Linux (x86_64)
 
 ```bash
 git clone https://github.com/Vinello28/Sharp-a-File.git ../Sharp-a-File
-MSSQL_ACCEPT_EULA=Y bash eng/e2e/run-e2e.sh --src ../Sharp-a-File --ref 8aec8bb78d34f70150cf7be970c4a712a9847546
+MSSQL_ACCEPT_EULA=Y bash eng/e2e/run-e2e.sh --src ../Sharp-a-File --ref 541f3789037f6543746de11d02d8388ff9b9a215
 set -a; . .e2e/state/live.env; set +a
 dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net10.0 --filter-trait "Category=Live"
 dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net8.0 --filter-trait "Category=Live"
@@ -40,7 +52,7 @@ dei sorgenti in `.e2e/work/`, l'unica riga che Edge non capisce (`ISJSON(metadat
 `sqlcmd` per il seed gira in un contenitore client amd64 usa-e-getta.
 
 ```bash
-MSSQL_ACCEPT_EULA=Y bash eng/e2e/run-e2e.sh --src ../Sharp-a-File --ref 8aec8bb78d34f70150cf7be970c4a712a9847546 --mac
+MSSQL_ACCEPT_EULA=Y bash eng/e2e/run-e2e.sh --src ../Sharp-a-File --ref 541f3789037f6543746de11d02d8388ff9b9a215 --mac
 set -a; . .e2e/state/live.env; set +a
 dotnet test --project tests/Filemaster.IntegrationTests -c Release -f net10.0 --filter-trait "Category=Live"
 bash eng/e2e/down.sh
@@ -67,13 +79,32 @@ Opzioni di `run-e2e.sh`: `--port N` (default 18080), `--no-build` (riusa l'immag
 
 ## Catturare le fixture (T6.3)
 
-`capture-fixtures.sh [--set <nome>]` manda ~220 richieste vere (successi, errori, intestazioni dei download) e scrive in
+`capture-fixtures.sh [--set <nome>]` manda ~290 richieste vere (successi, errori, intestazioni dei download) e scrive in
 `.e2e/fixtures/<nome>/` corpo, stato, intestazioni e richiesta di ognuna, con chiavi, segreti webhook ed email gia' scrubbati, piu'
-`selfcheck.txt` (lo stato atteso dal nome contro quello vero: deve dire `0 MISMATCH`). Carica e scarica 5 MiB, quindi **pretende un server
-con un limite di upload di almeno 8 MiB** e si rifiuta di partire altrimenti:
+`index.tsv` (l'elenco) e `selfcheck.txt` (lo stato atteso dal nome contro quello vero: deve dire `0 MISMATCH`). Carica e scarica 5 MiB,
+quindi **pretende un server con un limite di upload di almeno 8 MiB** (`FILEMASTER_E2E_MAX_UPLOAD_BYTES` o, dallo stato di
+`run-e2e.sh`, `E2E_MAX_UPLOAD_BYTES`) e si rifiuta di partire altrimenti. Con gli id numerici le richieste sui casi di id (zero, `042`,
+`+42`, fuori intervallo, il vecchio `doc_...`) stanno in fondo allo script: gli id presi dalle risposte sono numeri nudi e nei corpi si
+scrivono senza virgolette; il nome interno `dev` del profilo rilevato (da `GET /contact-categories`) vuol dire "il server ha i
+contatti e i codici cartella", cioe' `541f378`.
+
+Va lanciata su un'**istanza usa-e-getta**: oltre alle richieste, lo script scrive e cancella righe di prova nel database, avvia due
+istanze extra del server (sulla porta 18081 con il limite di upload a 1 KiB, sulla 18082 con un database senza password dell'archivio),
+**ferma e riavvia SQL Server** del progetto compose per catturare il 503 di `/readyz`, e cancella i documenti che ha creato. Il
+progetto compose e le chiavi sono quelli di `.e2e/state/` (`run-e2e.sh`). La cattura `t64` del 2026-10-09 (291 richieste,
+`0 MISMATCH`) e' stata fatta contro un'istanza sulla porta 18083 con il limite di upload largo:
 
 ```
-E2E_MAX_UPLOAD_BYTES=104857600 MSSQL_ACCEPT_EULA=Y bash eng/e2e/run-e2e.sh --src ../Sharp-a-File --ref <sha> [--mac]
+FILEMASTER_E2E_URL=http://127.0.0.1:18083 FILEMASTER_E2E_MAX_UPLOAD_BYTES=104857600 eng/e2e/capture-fixtures.sh --set t64
+```
+
+(`FILEMASTER_E2E_URL` e `FILEMASTER_E2E_MAX_UPLOAD_BYTES`, se impostate dal chiamante, puntano lo script a un'istanza diversa da quella di
+`run-e2e.sh` e vincono sullo stato: servono a non riavviare quella principale per allargare il limite. Le chiavi si leggono da
+`.e2e/state/keys.env` o dalle variabili `FILEMASTER_E2E_KEY`, `_READ_KEY` e `_ADMIN_KEY`.) In alternativa si porta su l'istanza
+principale con il limite largo e si lancia lo script senza variabili:
+
+```
+E2E_MAX_UPLOAD_BYTES=104857600 MSSQL_ACCEPT_EULA=Y bash eng/e2e/run-e2e.sh --src ../Sharp-a-File --ref 541f3789037f6543746de11d02d8388ff9b9a215 [--mac]
 bash eng/e2e/capture-fixtures.sh --set <nome>
 ```
 

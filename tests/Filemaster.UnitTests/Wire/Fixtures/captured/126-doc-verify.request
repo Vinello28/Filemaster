@@ -1,2 +1,2 @@
-POST /documents/doc_01M3VEESG5KBYR5PYAJ0TDT4B2/verify
+POST /documents/30017/verify
 # auth: X-API-Key (scope read)

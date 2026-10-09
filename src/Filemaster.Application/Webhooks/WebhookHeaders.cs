@@ -21,8 +21,8 @@ public static class WebhookHeaders
     public const string Event = "X-SharpAFile-Event";
 
     /// <summary>
-    /// L'header dell'identificatore della consegna, <c>X-SharpAFile-Delivery</c> (<c>whd_</c> e un ULID): uguale al campo
-    /// <c>delivery_id</c> del corpo e a ogni ritentativo dello stesso evento. Come <see cref="Event"/>, non e' coperto dalla
+    /// L'header dell'identificatore della consegna, <c>X-SharpAFile-Delivery</c> (un intero decimale scritto come testo): uguale al
+    /// campo <c>delivery_id</c> del corpo (li' e' un numero JSON) e a ogni ritentativo dello stesso evento. Come <see cref="Event"/>, non e' coperto dalla
     /// firma: per deduplicare si usa <c>WebhookEvent.DeliveryId</c>, letto dal corpo verificato.
     /// </summary>
     public const string Delivery = "X-SharpAFile-Delivery";

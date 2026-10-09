@@ -1,2 +1,0 @@
-GET /contacts/con_01M40AM8YZQ7RVR7VDFNGZBNR9
-# auth: X-API-Key (scope read); cattura T6.3 del 2026-10-03, dati seminati da eng/e2e/seed.sh

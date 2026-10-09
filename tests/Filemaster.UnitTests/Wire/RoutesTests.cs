@@ -10,7 +10,7 @@ namespace Filemaster.UnitTests.Wire;
 /// </summary>
 public sealed class RoutesTests
 {
-    private const string Doc = "doc_01M3VEESG5KBYR5PYAJ0TDT4B2";
+    private const string Doc = "30017";
 
     [Fact]
     public void The_fixed_routes_have_the_exact_text_and_no_leading_slash()
@@ -55,13 +55,23 @@ public sealed class RoutesTests
         Assert.Equal("/" + Routes.Healthz, WireFixtures.RequestPath("01-healthz"));
         Assert.Equal("/" + Routes.Readyz, WireFixtures.RequestPath("02-readyz"));
         Assert.Equal("/" + Routes.ContactCategories, WireFixtures.RequestPath("151-contact-categories-list"));
+        Assert.Equal(WireFixtures.RequestPath("259-contact-get"), "/" + Routes.Contact(new ContactId("1")));
     }
 
     [Fact]
     public void The_folder_and_contact_routes_have_the_exact_text()
     {
         Assert.Equal("folders/FATTURE", Routes.Folder(new FolderCode("FATTURE")));
-        Assert.Equal("contacts/con_01M3VEF0K9Z8X7Y6W5V4T3S2R1", Routes.Contact(new ContactId("con_01M3VEF0K9Z8X7Y6W5V4T3S2R1")));
+        Assert.Equal("contacts/7", Routes.Contact(new ContactId("7")));
+        Assert.Equal("contacts/2147483647", Routes.Contact(ContactId.From(int.MaxValue)));
+    }
+
+    [Fact]
+    public void A_document_id_beyond_int_MaxValue_and_beyond_2_pow_53_is_written_in_full()
+    {
+        Assert.Equal("documents/2147483648", Routes.Document(DocumentId.From(2147483648L)));
+        Assert.Equal("documents/9007199254740993/content", Routes.DocumentContent(DocumentId.From(9007199254740993L)));
+        Assert.Equal("documents/9223372036854775807/verify", Routes.DocumentVerify(DocumentId.From(long.MaxValue)));
     }
 
     [Theory]
@@ -96,7 +106,7 @@ public sealed class RoutesTests
         {
             Routes.Documents, Routes.DocumentsBulkMove, Routes.DocumentsBulkVerify, Routes.Folders, Routes.Contacts, Routes.ContactCategories, Routes.Tenant,
             Routes.Healthz, Routes.Readyz, Routes.Document(new DocumentId(Doc)), Routes.DocumentContent(new DocumentId(Doc)), Routes.Folder(new FolderCode("A.b")),
-            Routes.Contact(new ContactId("con_01M3VEF0K9Z8X7Y6W5V4T3S2R1")),
+            Routes.Contact(new ContactId("7")),
         };
 
         foreach (var path in paths)

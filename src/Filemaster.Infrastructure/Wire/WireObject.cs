@@ -4,7 +4,7 @@ using Filemaster.Domain;
 
 namespace Filemaster.Infrastructure;
 
-/// <summary>Come si interpreta un testo del filo come id forte (<c>DocumentId.TryParse</c>, <c>FolderCode.TryParse</c>...): la forma dei <c>TryParse</c> del Domain.</summary>
+/// <summary>Come si interpreta un testo del filo come id forte (<c>DocumentId.TryParse</c>, <c>FolderCode.TryParse</c>...): la forma dei <c>TryParse</c> del Domain. Per gli id numerici il testo e' quello del token JSON.</summary>
 /// <typeparam name="T">Il tipo dell'id.</typeparam>
 internal delegate bool WireIdParser<T>(string? text, out T value)
     where T : struct;
@@ -119,15 +119,19 @@ internal readonly struct WireObject
             ? date
             : throw Wrong(name, "non e' una data RFC 3339 con il fuso (Z oppure +hh:mm)");
 
-    /// <summary>Un id forte obbligatorio. Un testo che il <paramref name="parse"/> del Domain rifiuta (anche l'id vuoto) e' non interpretabile.</summary>
+    /// <summary>
+    /// Un id forte obbligatorio SCRITTO COME TESTO (i codici delle cartelle). Un testo che il <paramref name="parse"/> del Domain
+    /// rifiuta (anche l'id vuoto) e' non interpretabile. Gli id numerici (documento, contatto, ente) si leggono con
+    /// <see cref="RequiredNumericId{T}"/>.
+    /// </summary>
     /// <param name="name">La proprieta'.</param>
     /// <param name="parse">Il <c>TryParse</c> del tipo.</param>
-    /// <param name="what">Che cos'e', per il messaggio (<c>un id di documento</c>).</param>
+    /// <param name="what">Che cos'e', per il messaggio (<c>un codice di cartella</c>).</param>
     internal T RequiredId<T>(string name, WireIdParser<T> parse, string what)
         where T : struct =>
         OptionalId(name, parse, what) ?? throw Missing(name);
 
-    /// <summary>Un id forte facoltativo: null se la proprieta' manca o e' <c>null</c>; un testo non valido e' non interpretabile.</summary>
+    /// <summary>Un id forte facoltativo scritto come testo: null se la proprieta' manca o e' <c>null</c>; un testo non valido e' non interpretabile.</summary>
     internal T? OptionalId<T>(string name, WireIdParser<T> parse, string what)
         where T : struct
     {
@@ -138,6 +142,38 @@ internal readonly struct WireObject
         }
 
         return parse(text, out var id) ? id : throw Wrong(name, "non e' " + what + " valido");
+    }
+
+    /// <summary>
+    /// Un id forte numerico obbligatorio: sul filo e' un NUMERO JSON intero (<c>42</c>), mai un testo. Una stringa, un decimale
+    /// (<c>1.5</c>, <c>1.0</c>, <c>1e3</c>), un negativo, lo zero e un numero fuori intervallo sono non interpretabili.
+    /// </summary>
+    /// <param name="name">La proprieta'.</param>
+    /// <param name="parse">Il <c>TryParse</c> del tipo.</param>
+    /// <param name="what">Che cos'e', per il messaggio (<c>un id di documento</c>).</param>
+    internal T RequiredNumericId<T>(string name, WireIdParser<T> parse, string what)
+        where T : struct =>
+        OptionalNumericId(name, parse, what) ?? throw Missing(name);
+
+    /// <summary>
+    /// Un id forte numerico facoltativo: null se la proprieta' manca o e' <c>null</c>. Il testo del token numerico (<c>GetRawText()</c>, senza
+    /// conversioni in <c>double</c>: un id sopra 2^53 resta esatto) passa dal <paramref name="parse"/> del Domain, che accetta solo cifre
+    /// ASCII da 1 al massimo del tipo; quindi segno, parte decimale, esponente, zero e overflow sono tutti rifiutati.
+    /// </summary>
+    internal T? OptionalNumericId<T>(string name, WireIdParser<T> parse, string what)
+        where T : struct
+    {
+        if (!TryFind(name, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.Number)
+        {
+            throw Wrong(name, "non e' un numero intero");
+        }
+
+        return parse(value.GetRawText(), out var id) ? id : throw Wrong(name, "non e' " + what + " valido");
     }
 
     /// <summary>Un SHA-256 obbligatorio: esattamente 64 cifre esadecimali minuscole ASCII.</summary>

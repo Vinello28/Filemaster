@@ -298,7 +298,7 @@ public sealed class ApplicationShapeTests
 
     private static Document SampleDocument() =>
         new(
-            new DocumentId("doc_" + new string('0', 26)),
+            new DocumentId("1"),
             FolderId: null,
             OriginalFilename: "fattura.pdf",
             MimeType: "application/pdf",

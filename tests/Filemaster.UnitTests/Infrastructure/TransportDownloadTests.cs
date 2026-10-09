@@ -24,7 +24,7 @@ public sealed class TransportDownloadTests
         var reply = Reply.Bytes(200, data, declaredLength: 2000, "application/pdf").WithHeader("Last-Modified", "Thu, 01 Oct 2026 09:59:11 GMT");
         rig.Handler.Then(reply);
 
-        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
+        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
 
         Assert.Equal(200, download.Response.StatusCode);
         Assert.Equal(2000, download.Response.ContentLength);
@@ -42,7 +42,7 @@ public sealed class TransportDownloadTests
         using var rig = new TransportRig();
         var reply = Reply.Bytes(200, StreamReading.Pattern(10), declaredLength: 10);
         rig.Handler.Then(reply);
-        var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default);
+        var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default);
 
         download.Content.Dispose();
         download.Content.Dispose();
@@ -57,8 +57,8 @@ public sealed class TransportDownloadTests
         using var rig = new TransportRig();
         rig.Handler.Then(Reply.Bytes(200, new byte[3], 3, requestId: "srv-dl-1")).Then(Reply.Bytes(200, new byte[3], 3, requestId: null));
 
-        using var withHeader = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
-        using var without = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
+        using var withHeader = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
+        using var without = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
 
         Assert.Equal("srv-dl-1", withHeader.Response.RequestId);
         Assert.Equal(rig.Handler.Requests[1].Header("X-Request-ID"), without.Response.RequestId);
@@ -71,7 +71,7 @@ public sealed class TransportDownloadTests
         var reply = Reply.Bytes(206, StreamReading.Pattern(10), declaredLength: 10);
         reply.Content.Headers.ContentRange = new ContentRangeHeaderValue(10, 19, 100);
         rig.Handler.Then(reply);
-        var request = TransportRig.Get("documents/doc_X/content");
+        var request = TransportRig.Get("documents/42/content");
         request.Customize = message => message.Headers.Range = new RangeHeaderValue(10, 19);
 
         using var download = await rig.Transport.SendDownloadAsync(request, default).AsDisposable();
@@ -89,7 +89,7 @@ public sealed class TransportDownloadTests
     {
         using var rig = new TransportRig();
         rig.Handler.Then(Reply.Streamed(200, new ScriptedStream(StreamReading.Pattern(40)), declaredLength: 100, requestId: "srv-dl-9"));
-        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
+        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
 
         var exception = await Assert.ThrowsAsync<ContentIntegrityException>(() => StreamReading.ReadToEndAsync(download.Response.Content, ReadApi.Async, 16));
 
@@ -107,7 +107,7 @@ public sealed class TransportDownloadTests
         var dropping = new ScriptedStream(StreamReading.Pattern(100), maxChunk: 10);
         dropping.FailAtRead[3] = new IOException("connessione chiusa dal server");
         rig.Handler.Then(Reply.Streamed(200, dropping, declaredLength: null));
-        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
+        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
 
         Assert.Null(download.Response.ContentLength);
         var exception = await Assert.ThrowsAsync<ContentIntegrityException>(() => StreamReading.ReadToEndAsync(download.Response.Content, ReadApi.Async, 64));
@@ -124,7 +124,7 @@ public sealed class TransportDownloadTests
         using var rig = new TransportRig();
         var data = StreamReading.Pattern(77);
         rig.Handler.Then(Reply.Streamed(200, new ScriptedStream(data, maxChunk: 10), declaredLength: null));
-        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
+        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
 
         Assert.Equal(data, await StreamReading.ReadToEndAsync(download.Response.Content, ReadApi.Async, 64));
     }
@@ -138,7 +138,7 @@ public sealed class TransportDownloadTests
         var failed = Reply.Text(503);
         rig.Handler.ThenFail(new HttpRequestException("rete")).Then(failed).Then(Reply.Bytes(200, new byte[5], 5));
 
-        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
+        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
 
         Assert.Equal(3, rig.Handler.Requests.Count);
         Assert.Equal(2, rig.Delays.Delays.Count);
@@ -153,7 +153,7 @@ public sealed class TransportDownloadTests
         var dropping = new ScriptedStream(StreamReading.Pattern(100), maxChunk: 10);
         dropping.FailAtRead[2] = new IOException("rete");
         rig.Handler.Then(Reply.Streamed(200, dropping, declaredLength: 100)).Then(Reply.Bytes(200, StreamReading.Pattern(100), 100));
-        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
+        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
 
         await Assert.ThrowsAsync<ContentIntegrityException>(() => StreamReading.ReadToEndAsync(download.Response.Content, ReadApi.Async, 64));
 
@@ -175,7 +175,7 @@ public sealed class TransportDownloadTests
         var reply = Reply.Problem(status, slug);
         rig.Handler.Then(reply);
 
-        var exception = await Assert.ThrowsAnyAsync<FilemasterException>(() => rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default));
+        var exception = await Assert.ThrowsAnyAsync<FilemasterException>(() => rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default));
 
         Assert.IsType(expected, exception);
         Assert.Equal(1, reply.ContentOf().DisposeCount);
@@ -189,7 +189,7 @@ public sealed class TransportDownloadTests
         var reply = Reply.Empty(416);
         rig.Handler.Then(reply);
 
-        var exception = await Assert.ThrowsAsync<UnexpectedResponseException>(() => rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default));
+        var exception = await Assert.ThrowsAsync<UnexpectedResponseException>(() => rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default));
 
         Assert.Equal(416, exception.StatusCode);
         Assert.Equal(1, reply.ContentOf().DisposeCount);
@@ -201,7 +201,7 @@ public sealed class TransportDownloadTests
         using var rig = new TransportRig(o => o.Retry.MaxAttempts = 1);
         rig.Handler.ThenFail(new HttpRequestException("rete"));
 
-        await Assert.ThrowsAsync<ConnectionException>(() => rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default));
+        await Assert.ThrowsAsync<ConnectionException>(() => rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default));
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public sealed class TransportDownloadTests
         var entered = Waiting.NewSignal();
         rig.Handler.Then(Waiting.Hang(entered));
 
-        var call = rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default);
+        var call = rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default);
         await entered.Task;
         rig.Time.Advance(rig.Options.RequestTimeout);
 
@@ -232,7 +232,7 @@ public sealed class TransportDownloadTests
         var reply = Reply.Streamed(200, hanging, declaredLength: 100);
         reply.ContentOf().OnDispose = () => hanging.Fail(new ObjectDisposedException("risposta"));
         rig.Handler.Then(reply);
-        var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default);
+        var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default);
         var buffer = new byte[16];
         Assert.Equal(4, await download.Content.ReadAsync(buffer, 0, 16));
 
@@ -257,7 +257,7 @@ public sealed class TransportDownloadTests
         var data = StreamReading.Pattern(10);
         var reply = Reply.Streamed(200, new ScriptedStream(data), declaredLength: 10);
         rig.Handler.Then(reply);
-        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default).AsDisposable();
+        using var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default).AsDisposable();
 
         rig.Time.Advance(TimeSpan.FromDays(20));
 
@@ -274,7 +274,7 @@ public sealed class TransportDownloadTests
         var reply = Reply.Streamed(200, hanging, declaredLength: 100);
         reply.ContentOf().OnDispose = () => hanging.Fail(new IOException("risposta chiusa"));
         rig.Handler.Then(reply);
-        var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), cts.Token);
+        var download = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), cts.Token);
         var buffer = new byte[16];
         Assert.Equal(4, await download.Content.ReadAsync(buffer, 0, 16));
 

@@ -30,14 +30,15 @@ public sealed class HttpContactDirectoryTests
         Assert.Equal(TransportRig.Key, sent.Header("X-API-Key"));
         Assert.Null(sent.Body);
         Assert.Equal(2, page.Items.Count);
-        Assert.Equal("con_01M3VEF0K9Z8X7Y6W5V4T3S2R1", page.Items[0].Id.Value);
+        Assert.Equal("7", page.Items[0].Id.Value);
+        Assert.Equal(12, page.Items[1].Id.Number);
         Assert.Equal("Acme Srl", page.Items[0].Name);
         Assert.Equal(ContactKind.External, page.Items[0].Kind);
         Assert.Equal(3, page.Items[0].DocumentsAsSender);
         Assert.Equal(0, page.Items[0].DocumentsAsRecipient);
         Assert.Equal(ContactKind.User, page.Items[1].Kind);
         Assert.Equal(12, page.Items[1].DocumentsAsRecipient);
-        Assert.Equal("djF8TWFyaW8gUm9zc2l8Y29uXzAxTTNWRUYwUDFRMlIzUzRUNVY2VzdYOFk5", page.NextCursor);
+        Assert.Equal("bjF8MTJ8TWFyaW8gUm9zc2k", page.NextCursor);
     }
 
     [Fact]
@@ -114,7 +115,7 @@ public sealed class HttpContactDirectoryTests
 
         var sent = rig.Single;
         Assert.Equal(HttpMethod.Get, sent.Method);
-        Assert.Equal("/contacts/con_01M3VEF0P1Q2R3S4T5V6W7X8Y9", sent.PathAndQuery);
+        Assert.Equal("/contacts/12", sent.PathAndQuery);
         Assert.Equal("application/json", sent.Header("Accept"));
         Assert.Null(sent.Body);
         Assert.Equal(ResourceRig.Contact, contact.Id);
@@ -157,10 +158,21 @@ public sealed class HttpContactDirectoryTests
     }
 
     [Fact]
-    public async Task No_categories_is_an_empty_list_as_in_capture_151()
+    public async Task The_real_category_list_of_capture_151_has_the_seeded_category()
     {
         using var rig = new ResourceRig();
         rig.Then(() => FixtureReply.Json("151-contact-categories-list"));
+
+        var category = Assert.Single(await rig.Contacts.ListCategoriesAsync());
+
+        Assert.Equal(new ContactCategory("E2E-FORNITORI", "Fornitori E2E", 9001), category);
+    }
+
+    [Fact]
+    public async Task No_categories_is_an_empty_list_and_not_an_error()
+    {
+        using var rig = new ResourceRig();
+        rig.Then(() => Reply.Json(200, "{\"items\":[]}"));
 
         Assert.Empty(await rig.Contacts.ListCategoriesAsync());
     }

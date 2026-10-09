@@ -8,18 +8,19 @@ namespace Filemaster.UnitTests.Application.Webhooks;
 
 /// <summary>
 /// Il parser dei corpi di webhook. <b>Nessun corpo e' stato catturato dal server vero</b>: sono tutti costruiti a mano dalla forma
-/// letta nel codice (Sharp-a-File, ramo dev, commit 8aec8bb): la busta e' quella di <c>WebhookDispatcher.BuildBody</c>
-/// (<c>{"event","delivery_id","occurred_at","payload"}</c>) e i payload sono gli oggetti anonimi di <c>DocumentService</c>
-/// (<c>new { document_id, filename, sha256, deduplicated }</c> per il caricamento, <c>new { document_id, sha256 }</c> per la
-/// cancellazione, <c>new { document_id, sha256, detail }</c> per la verifica fallita), serializzati in snake_case senza omettere i
-/// null. Tutti i corpi sono quindi "derivati dal codice del server, non catturati". Una consegna vera ha solo ASCII (i non-ASCII
+/// letta nel codice (Sharp-a-File, master 541f378): la busta e' quella di <c>WebhookDispatcher.BuildBody</c>
+/// (<c>{"event","delivery_id","occurred_at","payload"}</c>, con <c>delivery_id</c> NUMERO JSON) e i payload sono gli oggetti anonimi di
+/// <c>DocumentService</c> (<c>new { document_id, filename, sha256, deduplicated }</c> per il caricamento, <c>new { document_id, sha256 }</c>
+/// per la cancellazione, <c>new { document_id, sha256, detail }</c> per la verifica fallita), serializzati in snake_case senza omettere i
+/// null. <c>document_id</c> e' un numero in <c>uploaded</c> e <c>integrity_failed</c> ma il TESTO delle cifre in <c>deleted</c> (il server
+/// pubblica l'id della rotta). Tutti i corpi sono quindi "derivati dal codice del server, non catturati". Una consegna vera ha solo ASCII (i non-ASCII
 /// e l'apostrofo escono come <c>\u00XX</c>): i casi con UTF-8 grezzo qui sono prove di robustezza.
 /// </summary>
 public sealed class WebhookEventParserTests
 {
     private const string Backslash = "\U0000005C";
-    private const string DeliveryId = "whd_01M3VEESG5KBYR5PYAJ0TDT4B2";
-    private const string DocumentIdText = "doc_01M3VEESG5KBYR5PYAJ0TDT4B2";
+    private const string DeliveryId = "4711";
+    private const string DocumentIdText = "30017";
     private const string Sha = "cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e";
     private const string OccurredAtText = "2026-10-01T09:59:15.205Z";
 
@@ -31,22 +32,24 @@ public sealed class WebhookEventParserTests
     private static byte[] Utf8(string text) => Encoding.UTF8.GetBytes(text);
 
     // La busta come la scrive il server (stesso ordine dei campi). Con payload null il campo "payload" manca del tutto.
+    // Il delivery_id e' JSON grezzo (di default il numero 4711, come lo scrive il server).
     private static string Envelope(string eventName, string? payload, string deliveryId = DeliveryId, string occurredAt = OccurredAtText) =>
-        "{\"event\":\"" + eventName + "\",\"delivery_id\":\"" + deliveryId + "\",\"occurred_at\":\"" + occurredAt + "\""
+        "{\"event\":\"" + eventName + "\",\"delivery_id\":" + deliveryId + ",\"occurred_at\":\"" + occurredAt + "\""
         + (payload is null ? string.Empty : ",\"payload\":" + payload) + "}";
 
     private static string UploadedPayload(
-        string documentId = "\"" + DocumentIdText + "\"",
+        string documentId = DocumentIdText,
         string filename = "\"fattura.pdf\"",
         string sha256 = "\"" + Sha + "\"",
         string deduplicated = "false") =>
         "{\"document_id\":" + documentId + ",\"filename\":" + filename + ",\"sha256\":" + sha256 + ",\"deduplicated\":" + deduplicated + "}";
 
+    // In document.deleted il server scrive l'id del documento come TESTO di cifre: e' la forma di default.
     private static string DeletedPayload(string documentId = "\"" + DocumentIdText + "\"", string sha256 = "\"" + Sha + "\"") =>
         "{\"document_id\":" + documentId + ",\"sha256\":" + sha256 + "}";
 
     private static string FailedPayload(
-        string documentId = "\"" + DocumentIdText + "\"",
+        string documentId = DocumentIdText,
         string sha256 = "\"" + Sha + "\"",
         string detail = "\"hash diverso\"") =>
         "{\"document_id\":" + documentId + ",\"sha256\":" + sha256 + ",\"detail\":" + detail + "}";
@@ -139,7 +142,7 @@ public sealed class WebhookEventParserTests
     public void Each_known_event_name_maps_to_its_own_type_and_the_payload_fields_are_not_mixed_up()
     {
         // Lo stesso payload completo sotto tre nomi diversi: ogni nome sceglie il suo tipo e legge solo i suoi campi.
-        var payload = "{\"document_id\":\"" + DocumentIdText + "\",\"filename\":\"a.pdf\",\"sha256\":\"" + Sha + "\",\"deduplicated\":true,\"detail\":\"d\"}";
+        var payload = "{\"document_id\":" + DocumentIdText + ",\"filename\":\"a.pdf\",\"sha256\":\"" + Sha + "\",\"deduplicated\":true,\"detail\":\"d\"}";
 
         Assert.IsType<DocumentUploadedEvent>(Parse(Envelope("document.uploaded", payload)));
         Assert.IsType<DocumentDeletedEvent>(Parse(Envelope("document.deleted", payload)));
@@ -149,8 +152,8 @@ public sealed class WebhookEventParserTests
     [Fact]
     public void Extra_fields_in_the_envelope_and_in_the_payload_are_ignored_and_the_event_stays_known()
     {
-        var body = "{\"event\":\"document.deleted\",\"future\":[1,2],\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\","
-            + "\"tenant_id\":\"ten_x\",\"payload\":{\"extra\":{\"a\":null},\"document_id\":\"" + DocumentIdText + "\",\"sha256\":\"" + Sha + "\"}}";
+        var body = "{\"event\":\"document.deleted\",\"future\":[1,2],\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\","
+            + "\"tenant_id\":9,\"payload\":{\"extra\":{\"a\":null},\"document_id\":\"" + DocumentIdText + "\",\"sha256\":\"" + Sha + "\"}}";
 
         var deleted = Assert.IsType<DocumentDeletedEvent>(Parse(body));
 
@@ -160,7 +163,7 @@ public sealed class WebhookEventParserTests
     [Fact]
     public void The_field_order_of_the_envelope_does_not_matter()
     {
-        var body = "{\"payload\":" + DeletedPayload() + ",\"occurred_at\":\"" + OccurredAtText + "\",\"delivery_id\":\"" + DeliveryId + "\",\"event\":\"document.deleted\"}";
+        var body = "{\"payload\":" + DeletedPayload() + ",\"occurred_at\":\"" + OccurredAtText + "\",\"delivery_id\":" + DeliveryId + ",\"event\":\"document.deleted\"}";
 
         Assert.Equal(new DocumentDeletedEvent(DeliveryId, OccurredAt, DocId, Sha), Parse(body));
     }
@@ -168,7 +171,7 @@ public sealed class WebhookEventParserTests
     [Fact]
     public void Whitespace_and_newlines_around_the_JSON_values_are_fine()
     {
-        var body = "\r\n{ \"event\" : \"document.deleted\" ,\n \"delivery_id\" : \"" + DeliveryId + "\" , \"occurred_at\" : \"" + OccurredAtText + "\" , \"payload\" : " + DeletedPayload() + " }\r\n";
+        var body = "\r\n{ \"event\" : \"document.deleted\" ,\n \"delivery_id\" : " + DeliveryId + " , \"occurred_at\" : \"" + OccurredAtText + "\" , \"payload\" : " + DeletedPayload() + " }\r\n";
 
         Assert.Equal(new DocumentDeletedEvent(DeliveryId, OccurredAt, DocId, Sha), Parse(body));
     }
@@ -199,7 +202,7 @@ public sealed class WebhookEventParserTests
     [Fact]
     public void An_unknown_event_name_becomes_UnknownWebhookEvent_with_the_raw_name_and_payload()
     {
-        var unknown = AssertUnknown(Envelope("document.renamed", "{\"document_id\":\"" + DocumentIdText + "\",\"new_name\":\"b.pdf\",\"n\":[1,2,3],\"x\":null}"), "document.renamed");
+        var unknown = AssertUnknown(Envelope("document.renamed", "{\"document_id\":" + DocumentIdText + ",\"new_name\":\"b.pdf\",\"n\":[1,2,3],\"x\":null}"), "document.renamed");
 
         Assert.Equal(JsonValueKind.Object, unknown.Payload.ValueKind);
         Assert.Equal("b.pdf", unknown.Payload.GetProperty("new_name").GetString());
@@ -285,7 +288,7 @@ public sealed class WebhookEventParserTests
 
     public static TheoryData<string, string> MalformedKnownPayloads()
     {
-        var id = "\"" + DocumentIdText + "\"";
+        var id = DocumentIdText;
         var sha = "\"" + Sha + "\"";
         return new TheoryData<string, string>
         {
@@ -302,9 +305,10 @@ public sealed class WebhookEventParserTests
             { "document.uploaded", "{\"document_id\":" + id + ",\"filename\":\"a.pdf\",\"deduplicated\":false}" },
             { "document.uploaded", "{\"document_id\":" + id + ",\"filename\":\"a.pdf\",\"sha256\":" + sha + "}" },
             // document.uploaded: un campo ha il tipo sbagliato
-            { "document.uploaded", UploadedPayload(documentId: "12") },
+            { "document.uploaded", UploadedPayload(documentId: "true") },
             { "document.uploaded", UploadedPayload(documentId: "null") },
             { "document.uploaded", UploadedPayload(documentId: "[]") },
+            { "document.uploaded", UploadedPayload(documentId: "{}") },
             { "document.uploaded", UploadedPayload(filename: "5") },
             { "document.uploaded", UploadedPayload(filename: "null") },
             { "document.uploaded", UploadedPayload(filename: "{}") },
@@ -315,21 +319,40 @@ public sealed class WebhookEventParserTests
             { "document.uploaded", UploadedPayload(deduplicated: "0") },
             { "document.uploaded", UploadedPayload(deduplicated: "1") },
             { "document.uploaded", UploadedPayload(deduplicated: "null") },
-            // un document_id che non e' un id di documento canonico
+            // un document_id che non e' un id di documento canonico (numero intero positivo, o il testo delle sue cifre)
             { "document.uploaded", UploadedPayload(documentId: "\"\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\" \"") },
             { "document.uploaded", UploadedPayload(documentId: "\"doc_\"") },
             { "document.uploaded", UploadedPayload(documentId: "\"doc_abc\"") },
-            { "document.uploaded", UploadedPayload(documentId: "\"DOC_01M3VEESG5KBYR5PYAJ0TDT4B2\"") },
-            { "document.uploaded", UploadedPayload(documentId: "\"doc_01m3veesg5kbyr5pyaj0tdt4b2\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\"doc_01M3VEESG5KBYR5PYAJ0TDT4B2\"") }, // il vecchio formato con prefisso e ULID
+            { "document.uploaded", UploadedPayload(documentId: "\"abc\"") },
             { "document.uploaded", UploadedPayload(documentId: "\"" + DocumentIdText + " \"") },
-            { "document.uploaded", UploadedPayload(documentId: "\"fld_01M3VEESG5KBYR5PYAJ0TDT4B2\"") },
-            { "document.uploaded", UploadedPayload(documentId: "\"doc_81M3VEESG5KBYR5PYAJ0TDT4B2\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\" " + DocumentIdText + "\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\"+" + DocumentIdText + "\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\"0\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\"030017\"") }, // zero iniziale: non e' la forma canonica
+            { "document.uploaded", UploadedPayload(documentId: "\"-30017\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\"30017.0\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\"1e3\"") },
+            { "document.uploaded", UploadedPayload(documentId: "\"9223372036854775808\"") },
+            { "document.uploaded", UploadedPayload(documentId: "0") },
+            { "document.uploaded", UploadedPayload(documentId: "-30017") },
+            { "document.uploaded", UploadedPayload(documentId: "-1") },
+            { "document.uploaded", UploadedPayload(documentId: "30017.0") },
+            { "document.uploaded", UploadedPayload(documentId: "1.5") },
+            { "document.uploaded", UploadedPayload(documentId: "3.0017e4") },
+            { "document.uploaded", UploadedPayload(documentId: "9223372036854775808") }, // long.MaxValue + 1
+            { "document.uploaded", UploadedPayload(documentId: "100000000000000000000") },
             // document.deleted
             { "document.deleted", "[]" },
             { "document.deleted", "null" },
             { "document.deleted", "{\"sha256\":" + sha + "}" },
             { "document.deleted", "{\"document_id\":" + id + "}" }, // sha256 assente (il server lo manda sempre, anche null)
-            { "document.deleted", DeletedPayload(documentId: "7") },
+            { "document.deleted", DeletedPayload(documentId: "true") },
+            { "document.deleted", DeletedPayload(documentId: "-7") },
+            { "document.deleted", DeletedPayload(documentId: "\"-7\"") },
+            { "document.deleted", DeletedPayload(documentId: "\"7x\"") },
+            { "document.deleted", DeletedPayload(documentId: "7.5") },
             { "document.deleted", DeletedPayload(documentId: "\"doc_abc\"") },
             { "document.deleted", DeletedPayload(sha256: "5") },
             { "document.deleted", DeletedPayload(sha256: "true") },
@@ -342,6 +365,10 @@ public sealed class WebhookEventParserTests
             { "document.integrity_failed", "{\"document_id\":" + id + ",\"detail\":\"d\"}" },
             { "document.integrity_failed", "{\"document_id\":" + id + ",\"sha256\":" + sha + "}" }, // detail assente
             { "document.integrity_failed", FailedPayload(documentId: "\"doc_abc\"") },
+            { "document.integrity_failed", FailedPayload(documentId: "\"x\"") },
+            { "document.integrity_failed", FailedPayload(documentId: "0") },
+            { "document.integrity_failed", FailedPayload(documentId: "-3") },
+            { "document.integrity_failed", FailedPayload(documentId: "2.5") },
             { "document.integrity_failed", FailedPayload(sha256: "null") }, // lo sha256 di una verifica fallita c'e' sempre
             { "document.integrity_failed", FailedPayload(sha256: "5") },
             { "document.integrity_failed", FailedPayload(detail: "5") },
@@ -375,7 +402,7 @@ public sealed class WebhookEventParserTests
     {
         // 0xFF dentro "filename": System.Text.Json lo accetta nel parse e lancia InvalidOperationException alla lettura del testo.
         var body = Concat(
-            "{\"event\":\"document.uploaded\",\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\",\"payload\":{\"document_id\":\"" + DocumentIdText + "\",\"filename\":\"a",
+            "{\"event\":\"document.uploaded\",\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\",\"payload\":{\"document_id\":" + DocumentIdText + ",\"filename\":\"a",
             new byte[] { 0xFF, 0xFE },
             ".pdf\",\"sha256\":\"" + Sha + "\",\"deduplicated\":false}}");
 
@@ -393,6 +420,115 @@ public sealed class WebhookEventParserTests
         var unknown = AssertUnknown(Envelope("document.uploaded", payload), "document.uploaded");
 
         Assert.Equal(payload, unknown.Payload.GetRawText());
+    }
+
+    // ------------------------------------------------------------------------------------------ delivery_id
+
+    [Theory]
+    [InlineData("1", "1")]
+    [InlineData("4711", "4711")]
+    [InlineData("2147483648", "2147483648")] // oltre int.MaxValue: la consegna e' un bigint
+    [InlineData("9007199254740993", "9007199254740993")] // 2^53 + 1: il testo delle cifre non passa da double
+    [InlineData("9223372036854775807", "9223372036854775807")]
+    [InlineData("\"4711\"", "4711")]
+    [InlineData("\"whd-abc\"", "whd-abc")] // una stringa non vuota resta com'e': e' solo una chiave da confrontare
+    [InlineData("\" 4711 \"", " 4711 ")]
+    [InlineData("\"0\"", "0")]
+    public void delivery_id_is_a_canonical_JSON_number_or_a_non_blank_string_and_is_kept_as_its_text(string deliveryJson, string expected)
+    {
+        var parsed = Parse(Envelope("document.deleted", DeletedPayload(), deliveryId: deliveryJson));
+
+        var deleted = Assert.IsType<DocumentDeletedEvent>(parsed);
+        Assert.Equal(expected, deleted.DeliveryId);
+        Assert.Equal(new DocumentDeletedEvent(expected, OccurredAt, DocId, Sha), deleted);
+    }
+
+    [Fact]
+    public void A_numeric_and_a_string_delivery_id_with_the_same_digits_are_the_same_delivery()
+    {
+        var asNumber = Parse(Envelope("document.deleted", DeletedPayload(), deliveryId: "4711"));
+        var asString = Parse(Envelope("document.deleted", DeletedPayload(), deliveryId: "\"4711\""));
+
+        Assert.Equal(asNumber, asString);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("true")]
+    [InlineData("false")]
+    [InlineData("0")]
+    [InlineData("-4711")]
+    [InlineData("4711.0")]
+    [InlineData("4711.5")]
+    [InlineData("4.711e3")]
+    [InlineData("9223372036854775808")]
+    [InlineData("[]")]
+    [InlineData("[4711]")]
+    [InlineData("{}")]
+    [InlineData("\"\"")]
+    [InlineData("\"   \"")]
+    [InlineData("\"\\t \"")]
+    public void A_delivery_id_that_is_not_a_positive_integer_number_nor_a_non_blank_string_is_a_non_conforming_envelope(string deliveryJson)
+    {
+        var body = Utf8(Envelope("document.deleted", DeletedPayload(), deliveryId: deliveryJson));
+
+        Assert.False(WebhookEventParser.TryParse(body, out var result));
+        Assert.Null(result);
+        Assert.Contains("'delivery_id'", Assert.Throws<FormatException>(() => WebhookEventParser.Parse(body)).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_unknown_event_with_a_numeric_delivery_id_keeps_the_delivery_id_text()
+    {
+        var unknown = Assert.IsType<UnknownWebhookEvent>(Parse(Envelope("something.new", "{}", deliveryId: "9007199254740993")));
+
+        Assert.Equal("9007199254740993", unknown.DeliveryId);
+    }
+
+    // ------------------------------------------------------------------------------------------ document_id
+
+    [Theory]
+    [InlineData("document.uploaded", "30017")]
+    [InlineData("document.uploaded", "\"30017\"")]
+    [InlineData("document.deleted", "30017")]
+    [InlineData("document.deleted", "\"30017\"")]
+    [InlineData("document.integrity_failed", "30017")]
+    [InlineData("document.integrity_failed", "\"30017\"")]
+    public void document_id_is_read_the_same_from_a_JSON_number_and_from_the_text_of_its_digits_in_every_event(string eventName, string documentIdJson)
+    {
+        var payload = eventName switch
+        {
+            "document.uploaded" => UploadedPayload(documentId: documentIdJson),
+            "document.deleted" => DeletedPayload(documentId: documentIdJson),
+            _ => FailedPayload(documentId: documentIdJson),
+        };
+
+        var documentId = Parse(Envelope(eventName, payload)) switch
+        {
+            DocumentUploadedEvent uploaded => uploaded.DocumentId,
+            DocumentDeletedEvent deleted => deleted.DocumentId,
+            DocumentIntegrityFailedEvent failed => failed.DocumentId,
+            var other => throw new InvalidOperationException(other.GetType().Name),
+        };
+
+        Assert.Equal(DocId, documentId);
+        Assert.Equal(30017L, documentId.Number);
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("2147483647")]
+    [InlineData("2147483648")]
+    [InlineData("9007199254740993")] // 2^53 + 1
+    [InlineData("9223372036854775807")]
+    public void document_id_up_to_long_MaxValue_keeps_every_digit_as_a_number_and_as_a_string(string digits)
+    {
+        var asNumber = Assert.IsType<DocumentUploadedEvent>(Parse(Envelope("document.uploaded", UploadedPayload(documentId: digits))));
+        var asString = Assert.IsType<DocumentDeletedEvent>(Parse(Envelope("document.deleted", DeletedPayload(documentId: "\"" + digits + "\""))));
+
+        Assert.Equal(digits, asNumber.DocumentId.Value);
+        Assert.Equal(digits, asString.DocumentId.Value);
+        Assert.Equal(long.Parse(digits, System.Globalization.CultureInfo.InvariantCulture), asNumber.DocumentId.Number);
     }
 
     // ------------------------------------------------------------------------------------------ occurred_at
@@ -476,26 +612,33 @@ public sealed class WebhookEventParserTests
             "[{\"event\":\"document.deleted\"}]",
             "{}",
             // event
-            "{\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\"}",
-            "{\"event\":null,\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\"}",
-            "{\"event\":5,\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\"}",
-            "{\"event\":{},\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\"}",
-            "{\"event\":[\"document.deleted\"],\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":null,\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":5,\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":{},\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":[\"document.deleted\"],\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\"}",
             // delivery_id
             "{\"event\":\"document.deleted\",\"occurred_at\":\"" + OccurredAtText + "\",\"payload\":" + DeletedPayload() + "}",
             "{\"event\":\"document.deleted\",\"delivery_id\":null,\"occurred_at\":\"" + OccurredAtText + "\"}",
-            "{\"event\":\"document.deleted\",\"delivery_id\":12,\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":true,\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":0,\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":-12,\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":12.5,\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":12.0,\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":1e3,\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":9223372036854775808,\"occurred_at\":\"" + OccurredAtText + "\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":{},\"occurred_at\":\"" + OccurredAtText + "\"}",
             "{\"event\":\"document.deleted\",\"delivery_id\":\"\",\"occurred_at\":\"" + OccurredAtText + "\"}",
             "{\"event\":\"document.deleted\",\"delivery_id\":\"   \",\"occurred_at\":\"" + OccurredAtText + "\"}",
             "{\"event\":\"document.deleted\",\"delivery_id\":[],\"occurred_at\":\"" + OccurredAtText + "\"}",
             // occurred_at
-            "{\"event\":\"document.deleted\",\"delivery_id\":\"" + DeliveryId + "\",\"payload\":" + DeletedPayload() + "}",
-            "{\"event\":\"document.deleted\",\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":null}",
-            "{\"event\":\"document.deleted\",\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":1759312755}",
-            "{\"event\":\"document.deleted\",\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":{}}",
-            "{\"event\":\"document.deleted\",\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"not a date\"}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":" + DeliveryId + ",\"payload\":" + DeletedPayload() + "}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":" + DeliveryId + ",\"occurred_at\":null}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":" + DeliveryId + ",\"occurred_at\":1759312755}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":" + DeliveryId + ",\"occurred_at\":{}}",
+            "{\"event\":\"document.deleted\",\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"not a date\"}",
             // tutto tranne la busta
-            "{\"payload\":{\"document_id\":\"" + DocumentIdText + "\",\"sha256\":" + sha + "}}",
+            "{\"payload\":{\"document_id\":" + DocumentIdText + ",\"sha256\":" + sha + "}}",
             new string('[', 200) + new string(']', 200), // oltre la profondita' massima di System.Text.Json
             "{\"event\":\"x\",\"delivery_id\":\"d\",\"occurred_at\":\"" + OccurredAtText + "\",\"payload\":" + new string('[', 200) + new string(']', 200) + "}", // payload troppo profondo
         };
@@ -540,12 +683,12 @@ public sealed class WebhookEventParserTests
     [Fact]
     public void No_System_Text_Json_exception_escapes_for_text_that_is_not_valid_UTF8_or_has_isolated_surrogates()
     {
-        var okTail = "\",\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\"}";
+        var okTail = "\",\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\"}";
 
         // 0xFF nei campi della busta
         var inEvent = Concat("{\"event\":\"a", new byte[] { 0xFF }, okTail);
         var inDelivery = Concat("{\"event\":\"a\",\"delivery_id\":\"w", new byte[] { 0xC0, 0xAF }, "\",\"occurred_at\":\"" + OccurredAtText + "\"}");
-        var inOccurred = Concat("{\"event\":\"a\",\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"2026-10-01T09:59:15", new byte[] { 0xFF }, "Z\"}");
+        var inOccurred = Concat("{\"event\":\"a\",\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"2026-10-01T09:59:15", new byte[] { 0xFF }, "Z\"}");
         // surrogato isolato come escape JSON nella busta
         var surrogateInEvent = Utf8("{\"event\":\"a" + Backslash + "ud800" + okTail);
         var surrogateInDelivery = Utf8("{\"event\":\"a\",\"delivery_id\":\"w" + Backslash + "udc00\",\"occurred_at\":\"" + OccurredAtText + "\"}");
@@ -562,7 +705,7 @@ public sealed class WebhookEventParserTests
     public void An_unknown_event_whose_payload_has_invalid_UTF8_keeps_the_payload_without_throwing()
     {
         var body = Concat(
-            "{\"event\":\"something.new\",\"delivery_id\":\"" + DeliveryId + "\",\"occurred_at\":\"" + OccurredAtText + "\",\"payload\":{\"a\":\"x",
+            "{\"event\":\"something.new\",\"delivery_id\":" + DeliveryId + ",\"occurred_at\":\"" + OccurredAtText + "\",\"payload\":{\"a\":\"x",
             new byte[] { 0xFF },
             "y\"}}");
 

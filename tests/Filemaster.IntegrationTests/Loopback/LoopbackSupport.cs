@@ -9,14 +9,14 @@ internal static class LoopbackSupport
 {
     internal const string Key = "saf_FakeKeyForTestsOnly_0123456789abcdef";
 
-    internal static readonly DocumentId DocId = new("doc_01M3VEESG5KBYR5PYAJ0TDT4B2");
+    internal static readonly DocumentId DocId = new("5000000001");
 
-    // Corpi presi dalle catture del server @8aec8bb (47-doc-upload, 71-docs-list-limit1-page1, 03-tenant, 02-readyz).
-    internal const string UploadJson = """{"id":"doc_01M3VEESG5KBYR5PYAJ0TDT4B2","folder_id":"FATTURE","original_filename":"fattura.pdf","mime_type":"application/pdf","sha256":"cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e","size_bytes":590,"owner":"maria","tag":"fattura","sender":"Acme Srl","recipient":"Beta Spa","metadata":{"arxivar":{"docnumber":12345,"categoria":"X"}},"created_at":"2026-10-01T09:59:15.20534Z","has_content":true,"deduplicated":false}""";
+    // Corpi presi dalle catture del server @541f378 (47-doc-upload, 71-docs-list-limit1-page1, 03-tenant, 02-readyz).
+    internal const string UploadJson = """{"id":5000000001,"folder_id":"FATTURE","original_filename":"fattura.pdf","mime_type":"application/pdf","sha256":"cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e","size_bytes":590,"owner":"maria","tag":"fattura","sender":"Acme Srl","recipient":"Beta Spa","metadata":{"arxivar":{"docnumber":12345,"categoria":"X"}},"created_at":"2026-10-09T11:11:07.949452Z","has_content":true,"deduplicated":false}""";
 
-    internal const string PageJson = """{"items":[{"id":"doc_01M3VEETKY7G9QMZHV4DPQ3QCV","original_filename":"random5m.bin","mime_type":"application/octet-stream","sha256":"7be2c8bb3d25189eafebf9688085116d87b7853a629f0d2dea12702353d30d9a","size_bytes":5242880,"tag":"grande","metadata":{},"created_at":"2026-10-01T09:59:16.350136Z","has_content":true}],"next_cursor":null}""";
+    internal const string PageJson = """{"items":[{"id":30028,"original_filename":"random5m.bin","mime_type":"application/octet-stream","sha256":"7be2c8bb3d25189eafebf9688085116d87b7853a629f0d2dea12702353d30d9a","size_bytes":5242880,"tag":"grande","metadata":{},"created_at":"2026-10-09T11:11:09.076432Z","has_content":true}],"next_cursor":null}""";
 
-    internal const string TenantJson = """{"id":"ten_01M3VCWS5PAKMSC47JNJ1PTFJQ","slug":"acme-test","name":"Acme Test","status":"active","created_at":"2026-10-01T09:59:09.501341Z"}""";
+    internal const string TenantJson = """{"id":1,"slug":"acme-test","name":"Acme Test","status":"active","created_at":"2026-10-09T11:00:45.098964Z"}""";
 
     internal const string ReadyJson = """{"status":"ready"}""";
 

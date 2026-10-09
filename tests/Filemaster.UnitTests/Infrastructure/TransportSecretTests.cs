@@ -45,7 +45,7 @@ public sealed class TransportSecretTests
     [Fact]
     public async Task The_key_is_in_no_exception_and_no_log_line_whatever_the_outcome()
     {
-        var get = TransportRig.Get("documents/doc_X");
+        var get = TransportRig.Get("documents/42");
         var entered = Waiting.NewSignal();
 
         await AssertCleanAsync(rig => rig.Handler.Then(Reply.Problem(401, "unauthorized", "chiave non valida")), rig => rig.Transport.SendBufferedAsync(get, default));
@@ -81,11 +81,11 @@ public sealed class TransportSecretTests
         rig.Handler.Then(Reply.Streamed(200, dropping, declaredLength: 100)).Then(Reply.Streamed(200, new ScriptedStream(new byte[5]), declaredLength: 50));
         var truncated = new List<Exception>();
 
-        var first = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default);
+        var first = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default);
         truncated.Add(await Capture(() => StreamReading.ReadToEndAsync(first.Content, ReadApi.Async, 64)));
         truncated.Add(await Capture(() => StreamReading.ReadToEndAsync(first.Content, ReadApi.Async, 64))); // verdetto sticky
         first.Content.Dispose();
-        var second = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/doc_X/content"), default);
+        var second = await rig.Transport.SendDownloadAsync(TransportRig.Get("documents/42/content"), default);
         truncated.Add(await Capture(() => StreamReading.ReadToEndAsync(second.Content, ReadApi.Async, 64)));
         second.Content.Dispose();
 

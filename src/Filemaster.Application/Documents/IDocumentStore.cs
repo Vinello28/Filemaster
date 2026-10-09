@@ -160,7 +160,8 @@ public interface IDocumentStore
     /// </summary>
     /// <remarks>
     /// Non c'e' un tetto esplicito sul numero di id e il client non divide in blocchi, ma il server limita a 1 MiB il corpo JSON
-    /// delle richieste: con circa 33 byte per id sono circa 31.000 id per chiamata, oltre i quali il server risponde 413
+    /// delle richieste. Ogni id occupa le sue cifre piu' la virgola (al piu' 20 byte, tipicamente 7-10): con id di 6-8 cifre il tetto
+    /// e' attorno a 110.000 id per chiamata, e sopra i 50.000 il server risponde comunque 413
     /// (<see cref="RequestTooLargeException"/>) o chiude la connessione. Chi ha piu' id li divide.
     /// </remarks>
     /// <param name="ids">Gli id dei documenti; almeno uno, nessuno vuoto (<c>default</c>).</param>
@@ -183,7 +184,7 @@ public interface IDocumentStore
     /// <see cref="VerifyAsync"/> (storico ed eventi webhook per ogni esito negativo), quindi non si ritenta da sola.
     /// </summary>
     /// <remarks>
-    /// Per il tetto sul numero di id vale la nota di <see cref="MoveManyAsync"/>: circa 31.000 id per chiamata.
+    /// Per il tetto sul numero di id vale la nota di <see cref="MoveManyAsync"/>: da 50.000 a oltre 100.000 id per chiamata, secondo le cifre degli id.
     /// </remarks>
     /// <param name="ids">Gli id dei documenti; almeno uno, nessuno vuoto (<c>default</c>).</param>
     /// <param name="cancellationToken">Per annullare la chiamata.</param>

@@ -10,8 +10,6 @@ namespace Filemaster.UnitTests.Wire;
 /// </summary>
 public sealed class WireObjectTests
 {
-    private const string DocId = "doc_01M3VEESG5KBYR5PYAJ0TDT4B2";
-
     private static T Read<T>(string json, Func<WireObject, T> read) =>
         WireJson.ReadObject(WireTest.Utf8(json), WireTest.Context(), "oggetto", read);
 
@@ -203,39 +201,111 @@ public sealed class WireObjectTests
         WireTest.Unexpected(() => Read("{}", o => o.RequiredDate("v")));
     }
 
-    // ----- id forti -----
+    // ----- id forti scritti come testo (i codici delle cartelle) -----
 
     [Fact]
-    public void A_valid_id_is_read_through_the_TryParse_of_its_type()
+    public void A_valid_text_id_is_read_through_the_TryParse_of_its_type()
     {
-        var id = Read(One("\"" + DocId + "\""), o => o.RequiredId<DocumentId>("v", DocumentId.TryParse, "un id di documento"));
-        var optional = Read(One("\"" + DocId + "\""), o => o.OptionalId<DocumentId>("v", DocumentId.TryParse, "un id di documento"));
+        var code = Read(One("\"FATTURE.2026\""), o => o.RequiredId<FolderCode>("v", FolderCode.TryParse, "un codice di cartella"));
+        var optional = Read(One("\"FATTURE.2026\""), o => o.OptionalId<FolderCode>("v", FolderCode.TryParse, "un codice di cartella"));
 
-        Assert.Equal(new DocumentId(DocId), id);
-        Assert.Equal(new DocumentId(DocId), optional);
+        Assert.Equal(new FolderCode("FATTURE.2026"), code);
+        Assert.Equal(new FolderCode("FATTURE.2026"), optional);
     }
 
     [Theory]
-    [InlineData("\"doc_abc\"")]
     [InlineData("\"\"")]
-    [InlineData("\"doc_01m3veesg5kbyr5pyaj0tdt4b2\"")]
-    [InlineData("\"fld_01M3VEESG5KBYR5PYAJ0TDT4B2\"")]
-    [InlineData("\"doc_01M3VEESG5KBYR5PYAJ0TDT4B2\\n\"")]
-    [InlineData("\"doc_81M3VEESG5KBYR5PYAJ0TDT4B2\"")]
-    [InlineData("5")]
-    public void An_invalid_id_is_not_interpretable_and_the_empty_id_is_never_produced(string value)
+    [InlineData("\" FATTURE\"")]
+    [InlineData("\"-FATTURE\"")]
+    [InlineData("\"FATTURE\\n\"")]
+    [InlineData("5")] // un codice e' un testo: un numero JSON non lo e'
+    [InlineData("true")]
+    public void An_invalid_text_id_is_not_interpretable_and_the_empty_id_is_never_produced(string value)
     {
-        WireTest.Unexpected(() => Read(One(value), o => o.RequiredId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
-        WireTest.Unexpected(() => Read(One(value), o => o.OptionalId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
+        WireTest.Unexpected(() => Read(One(value), o => o.RequiredId<FolderCode>("v", FolderCode.TryParse, "un codice di cartella")));
+        WireTest.Unexpected(() => Read(One(value), o => o.OptionalId<FolderCode>("v", FolderCode.TryParse, "un codice di cartella")));
     }
 
     [Fact]
-    public void A_missing_id_is_an_error_when_required_and_null_when_optional()
+    public void A_missing_text_id_is_an_error_when_required_and_null_when_optional()
     {
-        WireTest.Unexpected(() => Read("{}", o => o.RequiredId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
-        WireTest.Unexpected(() => Read("{\"v\":null}", o => o.RequiredId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
-        Assert.Null(Read("{}", o => o.OptionalId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
-        Assert.Null(Read("{\"v\":null}", o => o.OptionalId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
+        WireTest.Unexpected(() => Read("{}", o => o.RequiredId<FolderCode>("v", FolderCode.TryParse, "un codice di cartella")));
+        WireTest.Unexpected(() => Read("{\"v\":null}", o => o.RequiredId<FolderCode>("v", FolderCode.TryParse, "un codice di cartella")));
+        Assert.Null(Read("{}", o => o.OptionalId<FolderCode>("v", FolderCode.TryParse, "un codice di cartella")));
+        Assert.Null(Read("{\"v\":null}", o => o.OptionalId<FolderCode>("v", FolderCode.TryParse, "un codice di cartella")));
+    }
+
+    // ----- id forti numerici (documento, contatto, ente): un NUMERO JSON intero -----
+
+    [Theory]
+    [InlineData("1", 1L)]
+    [InlineData("42", 42L)]
+    [InlineData("2147483647", 2147483647L)]
+    [InlineData("2147483648", 2147483648L)] // oltre int.MaxValue: un documento e' un bigint
+    [InlineData("9007199254740993", 9007199254740993L)] // 2^53 + 1: un double lo arrotonderebbe a ...992
+    [InlineData("9223372036854775807", long.MaxValue)]
+    public void A_valid_numeric_id_is_read_from_a_json_number_without_losing_a_digit(string json, long expected)
+    {
+        var id = Read(One(json), o => o.RequiredNumericId<DocumentId>("v", DocumentId.TryParse, "un id di documento"));
+        var optional = Read(One(json), o => o.OptionalNumericId<DocumentId>("v", DocumentId.TryParse, "un id di documento"));
+
+        Assert.Equal(DocumentId.From(expected), id);
+        Assert.Equal(expected, id.Number);
+        Assert.Equal(DocumentId.From(expected), optional);
+    }
+
+    [Theory]
+    [InlineData("\"42\"")] // una stringa di cifre non e' un numero: sul filo l'id e' un numero JSON
+    [InlineData("\"\"")]
+    [InlineData("\"doc_abc\"")]
+    [InlineData("\"doc_01M3VEESG5KBYR5PYAJ0TDT4B2\"")] // il vecchio formato con prefisso e ULID
+    [InlineData("1.5")]
+    [InlineData("1.0")]
+    [InlineData("42.0")]
+    [InlineData("1e2")]
+    [InlineData("1E2")]
+    [InlineData("4.2e1")]
+    [InlineData("-1")]
+    [InlineData("-0")]
+    [InlineData("0")]
+    [InlineData("0.0")]
+    [InlineData("9223372036854775808")] // long.MaxValue + 1
+    [InlineData("99999999999999999999999")]
+    [InlineData("true")]
+    [InlineData("false")]
+    [InlineData("[]")]
+    [InlineData("[42]")]
+    [InlineData("{}")]
+    public void An_invalid_numeric_id_is_not_interpretable_and_the_empty_id_is_never_produced(string value)
+    {
+        var exception = WireTest.Unexpected(() => Read(One(value), o => o.RequiredNumericId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
+        WireTest.Unexpected(() => Read(One(value), o => o.OptionalNumericId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
+
+        Assert.Contains("oggetto.v", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("2147483647", true)]
+    [InlineData("2147483648", false)] // un contatto o un ente e' un int: oltre il suo limite non e' un id
+    public void The_numeric_id_is_checked_against_the_range_of_its_own_type(string json, bool valid)
+    {
+        if (valid)
+        {
+            Assert.Equal(2147483647, Read(One(json), o => o.RequiredNumericId<ContactId>("v", ContactId.TryParse, "un id di contatto")).Number);
+        }
+        else
+        {
+            WireTest.Unexpected(() => Read(One(json), o => o.RequiredNumericId<ContactId>("v", ContactId.TryParse, "un id di contatto")));
+        }
+    }
+
+    [Fact]
+    public void A_missing_numeric_id_is_an_error_when_required_and_null_when_optional()
+    {
+        WireTest.Unexpected(() => Read("{}", o => o.RequiredNumericId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
+        WireTest.Unexpected(() => Read("{\"v\":null}", o => o.RequiredNumericId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
+        Assert.Null(Read("{}", o => o.OptionalNumericId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
+        Assert.Null(Read("{\"v\":null}", o => o.OptionalNumericId<DocumentId>("v", DocumentId.TryParse, "un id di documento")));
     }
 
     // ----- SHA-256 -----

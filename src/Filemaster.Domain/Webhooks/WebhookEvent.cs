@@ -19,7 +19,10 @@ namespace Filemaster.Domain;
 /// </remarks>
 public abstract record WebhookEvent(string DeliveryId, DateTimeOffset OccurredAt)
 {
-    /// <summary>L'identificatore della consegna, uguale a ogni ritentativo dello stesso evento (chiave di idempotenza del ricevente).</summary>
+    /// <summary>
+    /// L'identificatore della consegna, uguale a ogni ritentativo dello stesso evento (chiave di idempotenza del ricevente). Sul
+    /// filo e' un numero intero; qui e' il testo delle sue cifre decimali, da confrontare solo per uguaglianza.
+    /// </summary>
     public string DeliveryId { get; } = DeliveryId;
 
     /// <summary>

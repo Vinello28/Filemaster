@@ -3,39 +3,45 @@
 Questo documento descrive l'API HTTP del server Sharp-a-File **come la implementa il codice**, con le sue stranezze, e per
 ognuna la scelta di Filemaster. Serve a chi mantiene la libreria e a chi deve capire un errore ricevuto da un'applicazione.
 
-- **Server letto**: `Sharp-a-File` ramo `dev`, commit `8aec8bb` ("to test and validate against human-user", da
+- **Server letto**: `Sharp-a-File` ramo `master`, commit `541f378` ("minor correction", da
   `git -C ../Sharp-a-File log -1 --oneline`). E' lo stesso commit delle fixture (`tests/Filemaster.UnitTests/Wire/Fixtures/README.md`)
-  e della decisione "il client mira a `dev` 8aec8bb" (`tasks/lessons.md`, T0.3). `master` (`v1.0.x`) non ha codici cartella,
-  `PATCH /folders`, contatti, `created_from`/`created_to`, `has_content` ne' `content-unavailable`.
+  e del pin dell'harness e2e (`.github/workflows/e2e.yml`, `eng/e2e/README.md`). Dal commit `7ca0e7e` ("now the app use autoinc IDs")
+  gli id non sono piu' ULID con prefisso (`doc_...`) ma **interi positivi** assegnati dal database; il vecchio riferimento, il ramo
+  `dev` al commit `8aec8bb`, e' superato (vedi "ID numerici" fra le stranezze).
 - **Fonte di verita'**: il codice. I percorsi dei file del server sono relativi a `Sharp-a-File/src/`; `Web/` sta per
   `SharpAFile.Web/`, `App/` per `SharpAFile.Application/`, `Domain/` per `SharpAFile.Domain/`. Il README del server e' in parte
-  obsoleto (vedi "Divergenze fra le fonti").
+  obsoleto (vedi "Divergenze fra le fonti"). I numeri di riga di `Web/Hosting/WebSurface.cs`, `Web/Http/Problem.cs` e
+  `Domain/Ids.cs` sono riletti su `541f378`; quelli degli altri file sono stati presi da `8aec8bb` e, dove il diff li ha
+  toccati (per esempio `App/Documents/DocumentService.cs`, `App/Common/Paging.cs`, `Web/Api/MultipartUpload.cs`), possono essere
+  scivolati di qualche riga: fa fede il nome del file e della funzione.
 - **Stato di Filemaster**: la fase A e' completa (trasporto, livello wire, adapter delle porte, composizione `AddFilemaster` e
-  factory) ed e' **provata contro il server vero** al commit sopra dalla suite live (`tests/Filemaster.IntegrationTests/Live/`,
-  31 test, verdi su net8 e net10 il 2026-10-03, vedi "Test contro il server vero"). Dove una scelta vive solo nel piano
-  (`tasks/todo.md`) lo si dice.
+  factory). La suite live (`tests/Filemaster.IntegrationTests/Live/`, 48 test) e' verde su net8 e net10 il 2026-10-09 contro
+  `541f378` (id numerici), vedi "Test contro il server vero". Dove una scelta
+  vive solo nel piano (`tasks/todo.md`) lo si dice.
 
 ## Panoramica
 
 | Tema | Come e' il server | Riferimento |
 | --- | --- | --- |
-| Descrizione | Nessun OpenAPI, nessun prefisso ne' versione nell'URL: le rotte stanno su `MapGroup("")` | `Web/Hosting/WebSurface.cs:105` |
-| JSON | `snake_case` (`SnakeCaseLower`), null **omessi** in uscita, proprieta' sconosciute **rifiutate** in ingresso | `WebSurface.cs:53-58` |
+| Descrizione | Nessun OpenAPI, nessun prefisso ne' versione nell'URL: le rotte stanno su `MapGroup("")` | `Web/Hosting/WebSurface.cs:126` |
+| JSON | `snake_case` (`SnakeCaseLower`), null **omessi** in uscita, proprieta' sconosciute **rifiutate** in ingresso | `WebSurface.cs:55-60` |
 | Enum | Per nome esplicito (`[WireName]`: `active`, `tenant-admin`, `external`...), mai per numero | `Domain/Enums.cs:5-54` |
 | Autenticazione | `X-API-Key: saf_...`, in alternativa `Authorization: Bearer saf_...`; l'ente e' sempre quello della chiave | `Web/Api/ApiKeyAuthentication.cs:34-41` |
 | Scope | Gerarchici: `read` (1) < `write` (2) < `admin` (3); passa chi ha uno scope >= al minimo | `Domain/Enums.cs:77-81`, `ApiKeyAuthentication.cs:95-99` |
 | Correlazione | `X-Request-ID`: se il client lo manda si tengono solo `[A-Za-z0-9._-]`, al massimo 64; altrimenti 16 esadecimali casuali | `Web/Http/HttpPipeline.cs:16-21`, `58-74` |
 | Errori | `application/problem+json` `{type:"/problems/<slug>", title, status, detail?, request_id}` | `Web/Http/Problem.cs:13-35` |
-| ID | Prefisso + ULID canonico **maiuscolo** (`doc_`, `con_`, `ten_`, `key_`, `acc_`, `wh_`, `whd_`); le cartelle hanno un codice scelto dall'utente | `Domain/Ids.cs`, `Domain/FolderCodes.cs` |
+| ID | **Interi positivi** assegnati dal database (IDENTITY da 1): `int` per ente, account, chiave API, contatto e webhook, `bigint` per documento e consegna webhook. Numeri JSON nei corpi; decimale canonico (`42`, mai `042` o `+42`) nel percorso e nella query. Le cartelle e le categorie di contatti hanno invece un codice di testo scelto dall'utente | `Domain/Ids.cs`, `Domain/FolderCodes.cs` |
 | Date in uscita | UTC con `Z`, da 0 a 6 decimali (zeri finali tagliati) | fixture catturate, `tasks/lessons.md` T0.3 |
 
 Filemaster manda su ogni richiesta `X-API-Key`, `X-Request-ID` (32 esadecimali minuscoli, **lo stesso** per tutti i tentativi di
 una chiamata, quindi il server lo tiene com'e') e `User-Agent: Filemaster/<versione> (...)`, mai impostati sull'`HttpClient`
 (`src/Filemaster.Infrastructure/Transport/FilemasterTransport.cs`, doc della classe). Usa solo `X-API-Key`.
 
-**Attenzione al request id sugli errori**: `Problem.WriteAsync` chiama `Response.Clear()` (`Problem.cs:19`), che cancella anche
-l'intestazione `X-Request-ID` messa dal middleware. Sulle risposte problem+json l'id si legge **solo** dal campo `request_id` del
-corpo. `ProblemMapper` fa cosi', con ripiego sull'intestazione (`Errors/ProblemMapper.cs:65`).
+**Request id sugli errori**: `Problem.WriteAsync` chiama `Response.Clear()` (`Problem.cs:19`), che cancella anche l'intestazione
+`X-Request-ID` messa dal middleware; da `541f378` la riscrive subito dopo (`Problem.cs:20-21`), quindi sulle risposte problem+json
+l'id e' sia nell'intestazione sia nel campo `request_id` del corpo, con lo stesso valore (misurato nella cattura `t64`). Fino a
+`8aec8bb` l'intestazione mancava sugli errori. `ProblemMapper` legge il campo del corpo, con ripiego sull'intestazione
+(`Errors/ProblemMapper.cs:65`): vale su entrambe le versioni del server.
 
 ## Endpoint della fase A
 
@@ -65,9 +71,9 @@ Porta = interfaccia dell'Application (`src/Filemaster.Application/`).
 | `GET` | `/healthz` | 200 `text/plain` `ok` | anonimo | `IFilemasterHealth.CheckLivenessAsync` |
 | `GET` | `/readyz` | 200 `{"status":"ready"}` / **503** `{"status":"unavailable","error":...}` | anonimo | `IFilemasterHealth.CheckReadinessAsync` |
 
-Note: `/healthz` e `/readyz` sono `AllowAnonymous` (`WebSurface.cs:95-103`; `/readyz` interroga il database con 3 s di limite).
-**Filemaster non manda `X-API-Key` alle sonde**: il server registra un solo schema di autenticazione (`WebSurface.cs:29`), che
-diventa quello di default e gira su ogni richiesta (`UseAuthentication`, `WebSurface.cs:92`) anche sugli endpoint anonimi; una
+Note: `/healthz` e `/readyz` sono `AllowAnonymous` (`WebSurface.cs:116-124`; `/readyz` interroga il database con 3 s di limite).
+**Filemaster non manda `X-API-Key` alle sonde**: il server registra un solo schema di autenticazione (`WebSurface.cs:31-32`), che
+diventa quello di default e gira su ogni richiesta (`UseAuthentication`, `WebSurface.cs:113`) anche sugli endpoint anonimi; una
 chiave inviata verrebbe cercata nel database, e con il database giu' `/readyz` risponderebbe 500 invece di 503 (dedotto dal
 codice, non misurato).
 `/tenant` e' la sonda di connettivita' + autenticazione. Fase B (non coperta ora): `GET/POST /documents/bulk` (export/import
@@ -76,7 +82,7 @@ ZIP), `/audit`, `/accounts`, `/api-keys`, `/webhooks` (`ManagementEndpoints.cs:5
 ## Errori: status e slug -> eccezione Filemaster
 
 Il server traduce le eccezioni in `ApiExceptionHandler.Map` (`HttpPipeline.cs:100-114`); gli stati senza corpo passano da
-`UseStatusCodePages` (`WebSurface.cs:66-91`: 404 -> `not-found`, 405 -> `method-not-allowed`, ogni altro -> slug generico `error`).
+`UseStatusCodePages` (`WebSurface.cs:85-112`: 404 -> `not-found`, 405 -> `method-not-allowed`, 413 -> `request-too-large`, ogni altro -> slug generico `error`).
 Filemaster applica `ProblemMapper` (`src/Filemaster.Infrastructure/Errors/ProblemMapper.cs`): **prima lo slug, poi lo status** se lo
 slug manca o e' sconosciuto, **tranne il 415 che va sempre per status**. Corpo d'errore letto al massimo per 16 KiB
 (`ProblemBody.MaxBytes`).
@@ -115,7 +121,7 @@ nomi di tipo .NET: si mostra, non si usa per decidere.
 
 | Limite | Valore | Riferimento | Effetto |
 | --- | --- | --- | --- |
-| Corpo JSON (default Kestrel) | 1 MiB | `Web/Hosting/AppBuilder.cs:18`, `54` | 413 `request-too-large`; vale anche per `bulk/move` e `bulk/verify` (circa 31.000 id, stima nel doc di `IDocumentStore.MoveManyAsync`) |
+| Corpo JSON (default Kestrel) | 1 MiB | `Web/Hosting/AppBuilder.cs:18`, `54` | 413 `request-too-large`; vale anche per `bulk/move` e `bulk/verify` (da 50.000 a oltre 100.000 id per chiamata: ogni id pesa le sue cifre, 1-19, piu' la virgola; la stima nel doc di `IDocumentStore.MoveManyAsync` e' stata riscritta di conseguenza) |
 | Singolo file | 500 MiB (`SHARPAFILE_MAX_UPLOAD_SIZE_BYTES`) | `Web/Configuration/SharpAFileOptions.cs:16`, `App/Documents/DocumentService.cs:29` | 413 dallo store |
 | Corpo dell'upload | file + 1 MiB di margine | `DocumentEndpoints.cs:12`, `35` | oltre: Kestrel chiude |
 | Campo multipart | 4096 byte (`metadata`: 64 KiB + 1) | `Web/Api/MultipartUpload.cs:18-19`, `99-100` | 400 |
@@ -131,20 +137,33 @@ connessione (`tasks/todo.md` T3.1). **Non** limita la lunghezza di `FileName`: u
 
 ## Stranezze e soluzioni
 
-### 404 su id malformato o non canonico
+### ID numerici: 404 su id malformato o non canonico
 
-`Ids.Require` (`Domain/Ids.cs:33-34`) trasforma un id malformato in `NotFoundException`, non in 400: "non esiste" come un id di un
-altro ente. E' malformato anche un id **minuscolo** o con lettere fuori alfabeto: vale solo la forma canonica
-(`Ids.cs:26-29`, confronto con `Ulid.ToString()`). Lo stesso per i codici cartella (`FolderCodes.Require`, `FolderCodes.cs:38-39`) e
-per `folder_id`, `sender_id`, `recipient_id`, `category_id` nelle query (`Web/Api/QueryParsing.cs:14-24`, `73`).
-**Filemaster**: `DocumentId`, `ContactId`, `TenantId` e `FolderCode` rifiutano in costruzione tutto cio' che il server non accetterebbe
-(primo carattere dell'ULID `0`..`7`, alfabeto Crockford maiuscolo, ciclo sui caratteri e niente regex), quindi un 404 che arriva e'
-davvero "non trovato". Unica divergenza voluta: `FolderCode` rifiuta il newline finale che il `$` della regex del server accetta
-(`tasks/lessons.md` T2a). Un id `default` (vuoto) e' `ArgumentException` (`Wire/Routes.cs`).
+Dal commit `7ca0e7e` gli id di ente, account, chiave API, documento, contatto e webhook sono interi positivi assegnati dal database
+(IDENTITY da 1; un'entita' non ancora salvata ha id 0). Fuori dal processo l'id e' testo e vale solo la forma canonica: cifre decimali
+senza segno ne' zeri iniziali (`Ids.TryParse`, `Domain/Ids.cs:15-22`: `NumberStyles.None`, maggiore di zero, e il testo deve
+coincidere con la riscrittura del numero). `Ids.Require` (`Ids.cs:26-28`) trasforma un id malformato in `NotFoundException`, non
+in 400: "non esiste" come un id di un altro ente. Quindi `/documents/042`, `/documents/+42`, `/documents/0` e il vecchio
+`/documents/doc_01...` sono tutti 404 `not-found`. Lo stesso per i codici cartella (`FolderCodes.Require`, `FolderCodes.cs:38-39`) e
+per `folder_id`, `sender_id`, `recipient_id`, `category_id` nelle query (`Web/Api/QueryParsing.cs:14-24`, `73`): un `sender_id` o
+`recipient_id` ben formato ma sconosciuto non e' un errore, da' 200 con l'elenco vuoto.
+Nei corpi JSON gli id sono **numeri** (`{"id":30017}`), mai testi; `bulk/move` e `bulk/verify` vogliono `{"document_ids":[42,43]}`
+(le stringhe `doc_...` sono 400; il server tollera anche stringhe numeriche come `["42"]`, ma Filemaster manda numeri). Il cursore
+degli elenchi porta l'id numerico: un cursore vecchio (con `doc_...`) e' 400. In `bulk/move` gli id minori o uguali a zero e gli
+sconosciuti sono ignorati; in `bulk/verify` bastano uno sconosciuto o un id minore o uguale a zero per avere 404 sull'intero lotto.
+**Filemaster**: `DocumentId`, `ContactId` e `TenantId` sono `readonly record struct` che reggono un numero (`long` il documento, `int`
+gli altri due). Il costruttore `new DocumentId("42")` rifiuta con `ArgumentException` tutto cio' che il server non accetterebbe
+(vuoto, segno, zeri iniziali, spazi, lettere, il vecchio `doc_...`, fuori da `1`..`long.MaxValue` / `int.MaxValue`; null e'
+`ArgumentNullException`), quindi un 404 che arriva e' davvero "non trovato". `Value` e' il decimale canonico (testo, come nell'URL),
+`Number` il numero, `DocumentId.From(42)` lo crea da un numero (`<= 0` e' `ArgumentOutOfRangeException`); `default` e' l'id vuoto e
+non valido (`Value` = stringa vuota). In scrittura i corpi di bulk portano numeri, in lettura si accettano solo numeri interi JSON
+(un id come testo, decimale, negativo, zero o fuori intervallo e' una risposta non interpretabile). `FolderCode` resta un testo:
+unica divergenza voluta dal server, rifiuta il newline finale che il `$` della regex del server accetta (`tasks/lessons.md` T2a).
+Un id `default` (vuoto) e' `ArgumentException` (`Wire/Routes.cs`).
 
 ### Corpi JSON rigidi
 
-`UnmappedMemberHandling.Disallow` (`WebSurface.cs:57`) + `ThrowOnBadRequest` (`WebSurface.cs:25`): una proprieta' in piu' e' 400
+`UnmappedMemberHandling.Disallow` (`WebSurface.cs:59`) + `ThrowOnBadRequest` (`WebSurface.cs:27`): una proprieta' in piu' e' 400
 `validation-error` "corpo JSON non valido". Un server piu' vecchio rifiuta quindi i campi che non conosce.
 **Filemaster**: scrive i corpi a mano con `Utf8JsonWriter`, solo i campi del DTO di quella richiesta (`Wire/WireJson.cs`,
 `Wire/DocumentWire.cs`); per la radice manda `{"folder_id":null}` esplicito. In lettura legge con `JsonElement` e ignora i campi in
@@ -178,9 +197,11 @@ l'esito e' ignoto e la decisione resta a chi chiama (per esempio una ricerca per
 
 ### Bulk move ignora, bulk verify fallisce tutto
 
-`MoveManyAsync` scarta in silenzio gli id malformati, sconosciuti o di altri enti e risponde `{moved: N}`
+`MoveManyAsync` scarta in silenzio gli id minori o uguali a zero, sconosciuti o di altri enti e risponde `{moved: N}`
 (`DocumentService.cs:176-194`); la cartella di destinazione inesistente e' invece 404 prima di spostare. `VerifyManyAsync` vuole
-**tutti** gli id esistenti: un id malformato o ignoto e' 404 sull'intero lotto, prima di toccare il disco (`DocumentService.cs:209-222`).
+**tutti** gli id esistenti: un id sconosciuto o minore o uguale a zero e' 404 sull'intero lotto, prima di toccare il disco
+(`DocumentService.cs:209-222`; misurato sul server vero a `541f378`). Gli id sono numeri JSON: Filemaster non puo' mandare un id
+malformato, perche' `DocumentId` lo rifiuta prima.
 Lista vuota: 400 in entrambi. Il `PATCH` singolo invece da' 404 se il documento non c'e' (`DocumentService.cs:166-173`).
 **Filemaster**: `MoveManyAsync` restituisce il conteggio (chi vuole sapere quali confronta); `VerifyManyAsync` documenta il 404 di lotto;
 gli id ripetuti valgono una volta in entrambi; nessun frazionamento automatico.
@@ -196,7 +217,8 @@ un'eccezione; `content-unavailable` -> `ContentUnavailableException`.
 ### Cursori opachi
 
 Documenti: base64url di `v1|<microsecondi unix>|<id>` (keyset su `created_at`, `id` decrescenti); contatti: `n1|<id>|<nome>`
-(`App/Common/Paging.cs:11-79`). Un cursore non decodificabile e' 400 "cursore non valido" (fixture `94-err-400-cursor-bad`). Il server non
+(`App/Common/Paging.cs:11-79`); l'`id` e' il numero del documento o del contatto. Un cursore non decodificabile, o con un id
+nel vecchio formato `doc_...`, e' 400 "cursore non valido" (fixture `94-err-400-cursor-bad`). Il server non
 lega il cursore ai filtri: cambiarli fra una pagina e l'altra da' risultati incoerenti senza errore. L'ultima pagina non ha `next_cursor`.
 **Filemaster**: il cursore e' una stringa passata cosi' com'e'; `EnumerateAsync` rilancia gli stessi filtri e si ferma con
 `UnexpectedResponseException` su un `next_cursor` vuoto, ripetuto o gia' visto. Cartelle e categorie non sono paginate; `/audit`
@@ -271,25 +293,32 @@ il primo compreso; `InitialDelay` 500 ms; `MaxDelay` 10 s).
 | Messaggio firmato | byte UTF-8 di `"<t>."` seguiti dai byte **grezzi** del corpo | `Secrets.cs:42-45` |
 | Chiave | UTF-8 dell'**intero** segreto, prefisso `whsec_` compreso, non decodificato | `Secrets.cs:11`, `18`, `46` |
 | `t` | l'ora dell'invio di ogni tentativo (si rifirma a ogni ritentativo) | `App/Webhooks/WebhookDispatcher.cs:65` |
-| Busta | `{event, delivery_id, occurred_at, payload}`; `delivery_id` (`whd_`+ULID) uguale fra i tentativi | `tasks/lessons.md` T2b |
+| Busta | `{event, delivery_id, occurred_at, payload}`; `delivery_id` e' un **numero JSON** (`bigint`, prima era `whd_`+ULID), uguale fra i tentativi | `tasks/lessons.md` T2b, `WebhookDispatcher.BuildBody` |
 | Tentativi del server | al massimo 8 | `Domain/Webhook.cs:71` |
 
 Eventi: `document.uploaded` `{document_id, filename, sha256, deduplicated}` (`filename`, non `original_filename`),
 `document.deleted` `{document_id, sha256}`, `document.integrity_failed` `{document_id, sha256, detail}` (`DocumentService.cs:59-60`,
-`162`, `308-309`).
+`162`, `308-309`). **`document_id` e' un numero JSON in `uploaded` e `integrity_failed`, ma il testo delle cifre (`"42"`) in
+`deleted`**, perche' `DeleteAsync` pubblica l'id della rotta, che e' una stringa (letto nel codice, non catturato: servirebbe un
+ricevitore). L'intestazione `X-SharpAFile-Delivery` ha le stesse cifre di `delivery_id`, come testo.
 
 **Filemaster** (`src/Filemaster.Application/Webhooks/`): `WebhookSignatureVerifier(secret, tolerance = 5 min, TimeProvider?)` ->
 `Valid | MissingHeader | MalformedHeader | TimestampOutOfTolerance | SignatureMismatch`; firma controllata prima della finestra;
 tutti i candidati `v1` confrontati a tempo costante; parti sconosciute dell'intestazione tollerate; il messaggio usa il testo grezzo di
 `t`; tolleranza in secondi interi, nei due versi. `WebhookEventParser`: un evento noto con payload malformato diventa
 `UnknownWebhookEvent` (mai un'eccezione che farebbe ritentare il server); `occurred_at` senza fuso = busta non conforme; per
-deduplicare si usa `delivery_id` del corpo verificato, non l'intestazione (non firmata).
+deduplicare si usa `delivery_id` del corpo verificato, non l'intestazione (non firmata). `WebhookEvent.DeliveryId` resta una
+**stringa** (e' solo una chiave di deduplicazione): il parser accetta `delivery_id` come numero JSON (la forma del server) o come
+stringa non vuota, e `document_id` come numero o come stringa di cifre canoniche (le due forme del server, vedi sopra); un `document_id`
+che non e' un id valido rende l'evento `UnknownWebhookEvent`.
 
 ## Divergenze fra le fonti
 
-- **README del server vs codice**: il README dice che "ogni risposta porta `X-Request-ID`", ma le risposte problem+json non lo
-  hanno (`Problem.cs:19`, confermato dalle catture). Il README elenca il prefisso `fld_` fra gli ID: nel codice di `dev` non esiste
-  (`Domain/Ids.cs`), le cartelle hanno un codice utente. Il README non dice che la chiave HMAC e' il segreto **con** `whsec_`.
+- **README del server vs codice**: a `8aec8bb` il README diceva che "ogni risposta porta `X-Request-ID`", ma le risposte problem+json
+  non lo avevano (`Response.Clear()`, confermato dalle catture); a `541f378` il codice rimette l'intestazione (`Problem.cs:20-21`) e
+  la divergenza e' chiusa. Il vecchio README elencava anche il prefisso `fld_` fra gli ID, che nel codice di `dev` non esisteva (le
+  cartelle hanno un codice utente), e a `541f378` nessun prefisso e' piu' in uso: gli id sono numeri. Il README non dice che la chiave
+  HMAC e' il segreto **con** `whsec_`.
 - **Piano vs codice del server su verify**: `tasks/todo.md` (Architettura) dice "verify scrive audit e webhook"; per la verifica
   singola audit e webhook ci sono solo se l'esito e' negativo, lo storico sempre (`DocumentService.cs:301-311`). La conclusione (non
   ritentare) non cambia; il doc di `IDocumentStore.VerifyAsync` e' esatto.
@@ -307,11 +336,17 @@ deduplicare si usa `delivery_id` del corpo verificato, non l'intestazione (non f
   `.github/workflows/e2e.yml` fa lo stesso su Ubuntu con SQL Server 2022 (manuale e notturno, non bloccante).
 - **Suite live** (`Category=Live`, opt-in con `FILEMASTER_E2E_URL`; `FILEMASTER_E2E_REQUIRED=1` trasforma lo "skip" in errore):
   round-trip completo dei documenti, cartelle, contatti, ARXivar, sonde, contratto degli errori e `ContractDriftTests` (forme grezze).
-  Esito del 2026-10-03 su macOS/Azure SQL Edge: **31/31 su net10 e su net8, cinque corse di fila sullo stesso server** (i test puliscono cio'
-  che creano). Nessuna risposta 5xx durante le corse.
-- **Catture**: `eng/e2e/capture-fixtures.sh` (223 richieste, `0 MISMATCH` fra stato atteso e vero). Confrontate per nome, status e insieme dei
-  campi con le fixture golden: nessuna differenza di contratto (solo dati: il seed ora contiene contatti). Le catture vere di contatti,
-  categorie e documento senza contenuto (`captured/301-304`) confermano le forme delle fixture derivate (`CapturedContactsTests`).
+  Ultimo esito, del 2026-10-09 su macOS/Azure SQL Edge contro `541f378` (id numerici): **48 test, 96/96 esecuzioni su net10 e su net8,
+  cinque corse di fila sullo stesso server** (i test puliscono cio' che creano: alla fine resta solo il documento seminato), nessuna
+  risposta 5xx. Fra i 48 c'e' `LiveDocumentFilterTests` (17 test): ogni filtro di `DocumentQuery` ha un test con l'insieme esatto di id
+  atteso, calcolato a mano, piu' AND, ordine, paginazione, `EnumerateAsync` e un caso via `AddFilemaster`. Provati con 72 mutanti del
+  client (filtri tolti o scambiati, date troncate, cursore ignorato, ...): tutti uccisi, tranne 2 equivalenti dimostrati (il server fa
+  gia' il trim e confronta senza distinguere maiuscole). Fino al 2026-10-03 la stessa suite (31 test) era verde contro il server
+  vecchio (`8aec8bb`, id con prefisso).
+- **Catture**: `eng/e2e/capture-fixtures.sh`. La cattura `t64` del 2026-10-09 contro `541f378` ha 291 richieste e `0 MISMATCH` fra stato atteso
+  e vero; confrontata con la precedente (`t63b`, stesso contratto a `8aec8bb`) ha gli stessi status e gli stessi campi: cambia solo
+  il tipo degli id, da testo a numero. Le catture vere di contatti, categorie e documento senza contenuto (`captured/258`, `259`, `150`, `151`)
+  confermano le forme delle fixture derivate (`CapturedContactsTests`). Le fixture golden del livello wire sono rigenerate da `t64`.
 - **Osservazioni sul server** (non difetti del client): una cartella con padre inesistente (404) e l'eliminazione di una cartella non vuota
   (409) passano da un'eccezione del database che il server registra a livello `Error` con lo stack completo; le API mandano il testo non
   ASCII come UTF-8 grezzo, i webhook come escape `\uXXXX`; entrambi i percorsi del 413 (limite dello store e limite del corpo) sono arrivati

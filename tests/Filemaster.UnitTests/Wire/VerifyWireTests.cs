@@ -10,7 +10,7 @@ namespace Filemaster.UnitTests.Wire;
 /// </summary>
 public sealed class VerifyWireTests
 {
-    private const string FatturaId = "doc_01M3VEESG5KBYR5PYAJ0TDT4B2";
+    private const string FatturaId = "30017";
     private const string FatturaSha = "cc1ba284a9fe9cefa40d4bd9dfb8d9e7fb395431aaf79478efca4e04da6c9d7e";
 
     private static IntegrityCheck ReadCheck(byte[] body) => VerifyWire.ReadIntegrityCheck(body, WireTest.Context());
@@ -26,14 +26,14 @@ public sealed class VerifyWireTests
     [Fact]
     public void The_captured_successful_verification_is_read_field_by_field()
     {
-        // 126-doc-verify: {"document_id":"doc_01M3VEESG5KBYR5PYAJ0TDT4B2","sha256":"cc1b...","ok":true,"checked_at":"2026-10-01T09:59:22.602054Z"}
+        // 126-doc-verify: {"document_id":30017,"sha256":"cc1b...","ok":true,"checked_at":"2026-10-09T11:11:14.773783Z"}
         var check = ReadCheck(Check());
 
         Assert.Equal(new DocumentId(FatturaId), check.DocumentId);
         Assert.Equal(FatturaSha, check.Sha256);
         Assert.True(check.Ok);
         Assert.Null(check.Detail);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 22, 6020540), check.CheckedAt);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 14, 7737830), check.CheckedAt);
         Assert.Equal(TimeSpan.Zero, check.CheckedAt.Offset);
     }
 
@@ -73,9 +73,14 @@ public sealed class VerifyWireTests
     }
 
     [Theory]
-    [InlineData("document_id", "5")]
+    [InlineData("document_id", "\"30017\"")] // l'id e' un numero JSON, non un testo di cifre
     [InlineData("document_id", "\"doc_abc\"")]
     [InlineData("document_id", "\"\"")]
+    [InlineData("document_id", "1.5")]
+    [InlineData("document_id", "-30017")]
+    [InlineData("document_id", "0")]
+    [InlineData("document_id", "9223372036854775808")]
+    [InlineData("document_id", "true")]
     [InlineData("sha256", "\"abc\"")]
     [InlineData("sha256", "5")]
     [InlineData("sha256", "\"CC1BA284A9FE9CEFA40D4BD9DFB8D9E7FB395431AAF79478EFCA4E04DA6C9D7E\"")]
@@ -89,6 +94,13 @@ public sealed class VerifyWireTests
     public void A_field_of_the_wrong_type_or_shape_is_not_interpretable(string field, string rawJson)
     {
         WireTest.Unexpected(() => ReadCheck(Variants.With(Check(), field, rawJson)));
+    }
+
+    [Fact]
+    public void The_document_id_is_a_json_number_and_a_big_one_is_read_exactly()
+    {
+        Assert.Equal(30017L, ReadCheck(Check()).DocumentId.Number);
+        Assert.Equal(9007199254740993L, ReadCheck(Variants.With(Check(), "document_id", "9007199254740993")).DocumentId.Number);
     }
 
     [Fact]

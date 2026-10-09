@@ -46,7 +46,7 @@ public sealed class LoopbackUploadTests
 
         var result = await Within(client.Documents.UploadAsync(Request(source), TestContext.Current.CancellationToken));
 
-        Assert.Equal("doc_01M3VEESG5KBYR5PYAJ0TDT4B2", result.Document.Id.Value);
+        Assert.Equal("5000000001", result.Document.Id.Value);
         var request = Assert.Single(server.Requests);
         Assert.Equal("POST", request.Method);
         Assert.Equal("/documents", request.Target);

@@ -40,7 +40,7 @@ namespace Filemaster.Infrastructure;
 /// </para>
 /// <para>
 /// <b>Campi.</b> <see cref="FilemasterException.ProblemType"/> e' lo slug nudo (anche se sconosciuto); <see cref="FilemasterException.RequestId"/>
-/// viene dal <c>request_id</c> del corpo (le risposte problem+json non hanno l'header <c>X-Request-ID</c>) con ripiego sull'intestazione;
+/// viene dal <c>request_id</c> del corpo (il server di riferimento, dal commit 541f378, ripete lo stesso valore anche nell'header <c>X-Request-ID</c>; i server piu' vecchi no) con ripiego sull'intestazione;
 /// <see cref="FilemasterException.Detail"/> dal <c>detail</c> del corpo. Il messaggio e' quello di default del tipo; se il corpo ha un
 /// <c>detail</c> diventa <c>"Il server ha risposto {status}: {detail}"</c> (per <see cref="UnexpectedResponseException"/> lo status c'e' sempre).
 /// </para>

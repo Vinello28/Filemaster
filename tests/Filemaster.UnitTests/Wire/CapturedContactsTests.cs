@@ -6,51 +6,61 @@ using Filemaster.Infrastructure;
 namespace Filemaster.UnitTests.Wire;
 
 /// <summary>
-/// Le catture vere di anagrafica e documenti senza contenuto (T6.3, 2026-10-03: fixture 301-304, dati seminati da <c>eng/e2e/seed.sh</c> su un
-/// server <c>dev</c> 8aec8bb). Due controlli: i lettori del client leggono il corpo vero, e ogni nome di campo che il server manda esiste anche
-/// nella fixture DERIVATA corrispondente, che resta l'oracolo dei test di dettaglio (ha piu' campi valorizzati della cattura). Se il server
-/// rinomina o aggiunge un campo, questi test lo dicono prima dei test di dettaglio, che continuerebbero a passare sulla fixture scritta a mano.
+/// Le catture vere dell'anagrafica (t64, 2026-10-09, Sharp-a-File <c>master</c> 541f378: fixture 150, 151, 258 e 259, dati seminati da
+/// <c>eng/e2e/seed.sh</c>) e il documento senza contenuto con tre contatti (fixture DERIVATA dalla cattura 265 piu' i contatti dei dati seminati: il
+/// dettaglio di quel documento non e' stato catturato). Due controlli: i lettori del client leggono il corpo vero, e ogni nome di campo che il
+/// server manda esiste anche nella fixture DERIVATA corrispondente, che resta l'oracolo dei test di dettaglio (ha piu' campi valorizzati della
+/// cattura). Se il server rinomina o aggiunge un campo, questi test lo dicono prima dei test di dettaglio, che continuerebbero a passare sulla
+/// fixture scritta a mano. Gli id dei contatti sono NUMERI JSON (1, 2, 3), non piu' testi con prefisso.
 /// </summary>
 public sealed class CapturedContactsTests
 {
-    private static readonly ContactId Supplier = new("con_01M40AM8YZQ7RVR7VDFNGZBNR9");
-    private static readonly ContactId Group = new("con_01M40AM900GRTAVXQ0TKBJG58N");
-    private static readonly ContactId User = new("con_01M40AM8ZGBYFRXPPEVXSTQPRJ");
+    private static readonly ContactId Supplier = new("1");
+    private static readonly ContactId Group = new("3");
+    private static readonly ContactId User = new("2");
 
     // "Fornitore E2E Citta' Srl" con la a accentata: il server la manda come UTF-8 grezzo, non come escape.
     private const string SupplierName = "Fornitore E2E Citt\U000000E0 Srl";
 
     [Fact]
-    public void The_captured_contact_page_is_read_with_both_kinds_the_counters_and_the_cursor()
+    public void The_captured_first_contact_page_has_the_full_supplier_the_counters_and_the_cursor()
     {
-        var page = ContactWire.ReadPage(WireFixtures.Captured("301-contacts-page"), WireTest.Context());
+        var page = ContactWire.ReadPage(WireFixtures.Captured("258-contacts-list-first"), WireTest.Context());
 
-        Assert.Equal(2, page.Items.Count);
-        var supplier = page.Items[0];
+        var supplier = Assert.Single(page.Items);
         Assert.Equal(Supplier, supplier.Id);
+        Assert.Equal(1L, supplier.Id.Number);
         Assert.Equal(SupplierName, supplier.Name);
         Assert.Equal(ContactKind.External, supplier.Kind);
         Assert.Equal("E2E-FORNITORI", supplier.CategoryId);
         Assert.Equal("E2E-EXT", supplier.Code);
         Assert.Equal("user@example.test", supplier.Email);
+        Assert.Equal("pec@example.test", supplier.Pec);
         Assert.Equal(9101, supplier.ArxivarId);
-        Assert.Equal(new DateTimeOffset(2026, 10, 3, 7, 28, 33, TimeSpan.Zero).AddTicks(60150), supplier.CreatedAt);
+        Assert.Equal(new DateTimeOffset(2026, 10, 9, 11, 0, 45, TimeSpan.Zero).AddTicks(989640), supplier.CreatedAt);
         Assert.Equal(1, supplier.DocumentsAsSender);
         Assert.Equal(0, supplier.DocumentsAsRecipient);
         Assert.Null(supplier.Fax);
-
-        var group = page.Items[1];
-        Assert.Equal(Group, group.Id);
-        Assert.Equal(ContactKind.Group, group.Kind);
-        Assert.Null(group.CategoryId);
-        Assert.Equal(1, group.DocumentsAsRecipient);
         Assert.NotNull(page.NextCursor);
+    }
+
+    [Fact]
+    public void The_captured_contact_list_has_the_three_kinds_and_no_cursor_on_the_last_page()
+    {
+        var page = ContactWire.ReadPage(WireFixtures.Captured("150-contacts-list"), WireTest.Context());
+
+        Assert.Equal(new[] { Supplier, Group, User }, page.Items.Select(c => c.Id).ToArray());
+        Assert.Equal(new[] { ContactKind.External, ContactKind.Group, ContactKind.User }, page.Items.Select(c => c.Kind).ToArray());
+        Assert.Null(page.Items[1].CategoryId);
+        Assert.Equal(1, page.Items[1].DocumentsAsRecipient);
+        Assert.Equal(9102, page.Items[2].ArxivarId);
+        Assert.Null(page.NextCursor);
     }
 
     [Fact]
     public void The_captured_contact_detail_has_no_counters()
     {
-        var contact = ContactWire.ReadContact(WireFixtures.Captured("302-contact-detail"), WireTest.Context());
+        var contact = ContactWire.ReadContact(WireFixtures.Captured("259-contact-get"), WireTest.Context());
 
         Assert.Equal(Supplier, contact.Id);
         Assert.Equal(SupplierName, contact.Name);
@@ -61,7 +71,7 @@ public sealed class CapturedContactsTests
     [Fact]
     public void The_captured_categories_are_read_with_the_arxivar_id()
     {
-        var category = Assert.Single(ContactWire.ReadCategories(WireFixtures.Captured("303-contact-categories"), WireTest.Context()));
+        var category = Assert.Single(ContactWire.ReadCategories(WireFixtures.Captured("151-contact-categories-list"), WireTest.Context()));
 
         Assert.Equal("E2E-FORNITORI", category.Id);
         Assert.Equal("Fornitori E2E", category.Name);
@@ -69,9 +79,9 @@ public sealed class CapturedContactsTests
     }
 
     [Fact]
-    public void The_captured_document_without_content_has_no_hash_and_lists_its_contacts_in_order()
+    public void The_document_without_content_has_no_hash_and_lists_its_contacts_in_order()
     {
-        var document = DocumentWire.ReadDocument(WireFixtures.Captured("304-doc-detail-without-content-with-contacts"), WireTest.Context());
+        var document = DocumentWire.ReadDocument(WireFixtures.Derived("doc-detail-without-content-with-contacts"), WireTest.Context());
 
         Assert.False(document.HasContent);
         Assert.Null(document.Sha256);
@@ -85,11 +95,11 @@ public sealed class CapturedContactsTests
 
     public static TheoryData<string, string, string> CapturedAndDerived => new()
     {
-        { "301-contacts-page", "contacts-page", "" },
+        { "258-contacts-list-first", "contacts-page", "" },
+        { "150-contacts-list", "contacts-page", "" },
         // Il dettaglio derivato e' un contatto minimo: l'oracolo dei nomi e' il contatto completo della pagina derivata.
-        { "302-contact-detail", "contacts-page", "items[]." },
-        { "303-contact-categories", "contact-categories", "" },
-        { "304-doc-detail-without-content-with-contacts", "doc-detail-with-contacts", "" },
+        { "259-contact-get", "contacts-page", "items[]." },
+        { "151-contact-categories-list", "contact-categories", "" },
     };
 
     [Theory]

@@ -6,7 +6,7 @@ using Filemaster.Infrastructure;
 namespace Filemaster.UnitTests.Wire;
 
 /// <summary>
-/// Le sonde di salute lette dalle risposte catturate (fixture 01 <c>/healthz</c>, 02 <c>/readyz</c> 200, 224 <c>/readyz</c> 503): il 503 non e'
+/// Le sonde di salute lette dalle risposte catturate (fixture 01 <c>/healthz</c>, 02 <c>/readyz</c> 200, 223 <c>/readyz</c> 503): il 503 non e'
 /// problem+json e non e' un errore, e <see cref="HealthProbeResult.IsHealthy"/> dipende dallo status HTTP, non dal testo.
 /// </summary>
 public sealed class HealthWireTests
@@ -41,10 +41,10 @@ public sealed class HealthWireTests
     [Fact]
     public void The_captured_503_is_an_unhealthy_result_with_the_reason_and_not_an_error()
     {
-        // 224-readyz-503-db-down: 503 {"status":"unavailable","error":"database non raggiungibile"} (application/json, non problem+json)
-        Assert.Equal(503, WireFixtures.Status("224-readyz-503-db-down"));
+        // 223-readyz-503-db-down: 503 {"status":"unavailable","error":"database non raggiungibile"} (application/json, non problem+json)
+        Assert.Equal(503, WireFixtures.Status("223-readyz-503-db-down"));
 
-        var result = Readiness(WireFixtures.Captured("224-readyz-503-db-down"), 503);
+        var result = Readiness(WireFixtures.Captured("223-readyz-503-db-down"), 503);
 
         Assert.False(result.IsHealthy);
         Assert.Equal("unavailable", result.Status);

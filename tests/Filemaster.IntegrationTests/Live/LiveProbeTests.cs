@@ -22,7 +22,8 @@ public sealed class LiveProbeTests
             Assert.Equal(LiveSeed.TenantSlug, tenant.Slug);
             Assert.Equal(LiveSeed.TenantName, tenant.Name);
             Assert.Equal(TenantStatus.Active, tenant.Status);
-            Assert.True(TenantId.IsValid(tenant.Id.Value));
+            Assert.False(tenant.Id.IsEmpty);
+            Assert.True(tenant.Id.Number >= 1);
             Assert.True(tenant.CreatedAt <= DateTimeOffset.UtcNow.AddMinutes(5));
             Assert.Equal(TimeSpan.Zero, tenant.CreatedAt.Offset);
         }

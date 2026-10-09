@@ -5,15 +5,16 @@ using Filemaster.Infrastructure;
 namespace Filemaster.UnitTests.Wire;
 
 /// <summary>
-/// L'anagrafica. <b>Nessuna cattura contiene un contatto o una categoria</b>: il server di prova aveva l'anagrafica vuota (fixture 150, 151,
-/// 152: <c>{"items":[]}</c>), quindi le forme di <see cref="Contact"/> e <see cref="ContactCategory"/> vengono da fixture DERIVATE dal codice del
-/// server (<c>ContactDto</c>, <c>ContactCategoryDto</c>, <c>Wire&lt;ContactKind&gt;</c>: snake_case, null omessi) e sono marcate cosi' nel README.
-/// Le catture vere vanno a sostituirle (T6.3).
+/// L'anagrafica. I contatti veri (fixture 150, 258, 259) sono letti da <see cref="CapturedContactsTests"/>; qui restano la ricerca senza
+/// risultati (fixture 152, <c>{"items":[]}</c>) e le forme di <see cref="Contact"/> e <see cref="ContactCategory"/> che i dati di prova non hanno (un
+/// contatto con tutti i campi, uno minimo, una categoria senza id ARXivar): vengono da fixture DERIVATE dal codice del server (<c>ContactDto</c>,
+/// <c>ContactCategoryDto</c>, <c>Wire&lt;ContactKind&gt;</c>: snake_case, null omessi) e sono marcate cosi' nel README. Gli id dei contatti sono
+/// NUMERI JSON interi.
 /// </summary>
 public sealed class ContactWireTests
 {
-    private static readonly ContactId Acme = new("con_01M3VEF0K9Z8X7Y6W5V4T3S2R1");
-    private static readonly ContactId Mario = new("con_01M3VEF0P1Q2R3S4T5V6W7X8Y9");
+    private static readonly ContactId Acme = new("7");
+    private static readonly ContactId Mario = new("12");
 
     private static Contact Read(byte[] body) => ContactWire.ReadContact(body, WireTest.Context());
 
@@ -21,22 +22,14 @@ public sealed class ContactWireTests
 
     private static IReadOnlyList<ContactCategory> ReadCategories(byte[] body) => ContactWire.ReadCategories(body, WireTest.Context());
 
-    // ----- catture vere (vuote) -----
+    // ----- catture vere -----
 
     [Fact]
-    public void The_captured_empty_directory_is_an_empty_page_without_a_cursor()
+    public void The_captured_search_without_results_is_an_empty_page_without_a_cursor()
     {
-        // 150-contacts-list e 152-contacts-list-q (?q=acme): {"items":[]}
-        Assert.Empty(ReadPage(WireFixtures.Captured("150-contacts-list")).Items);
-        Assert.Null(ReadPage(WireFixtures.Captured("150-contacts-list")).NextCursor);
+        // 152-contacts-list-q (?q=acme): {"items":[]}
         Assert.Empty(ReadPage(WireFixtures.Captured("152-contacts-list-q")).Items);
-    }
-
-    [Fact]
-    public void The_captured_empty_categories_are_an_empty_list()
-    {
-        // 151-contact-categories-list: {"items":[]}
-        Assert.Empty(ReadCategories(WireFixtures.Captured("151-contact-categories-list")));
+        Assert.Null(ReadPage(WireFixtures.Captured("152-contacts-list-q")).NextCursor);
     }
 
     // ----- fixture derivate -----
@@ -48,7 +41,7 @@ public sealed class ContactWireTests
         var acme = page.Items[0];
 
         Assert.Equal(2, page.Items.Count);
-        Assert.Equal("djF8TWFyaW8gUm9zc2l8Y29uXzAxTTNWRUYwUDFRMlIzUzRUNVY2VzdYOFk5", page.NextCursor);
+        Assert.Equal("bjF8MTJ8TWFyaW8gUm9zc2k", page.NextCursor);
         Assert.Equal(Acme, acme.Id);
         Assert.Equal("Acme Srl", acme.Name);
         Assert.Equal(ContactKind.External, acme.Kind);
@@ -150,10 +143,17 @@ public sealed class ContactWireTests
     }
 
     [Theory]
-    [InlineData("id", "5")]
+    [InlineData("id", "\"7\"")] // l'id e' un numero JSON: lo stesso valore scritto come testo non e' valido
     [InlineData("id", "\"con_abc\"")]
     [InlineData("id", "\"\"")]
-    [InlineData("id", "\"doc_01M3VEF0K9Z8X7Y6W5V4T3S2R1\"")]
+    [InlineData("id", "\"con_01M3VEF0K9Z8X7Y6W5V4T3S2R1\"")] // il vecchio formato con prefisso e ULID
+    [InlineData("id", "7.5")]
+    [InlineData("id", "7.0")]
+    [InlineData("id", "7e0")]
+    [InlineData("id", "-7")]
+    [InlineData("id", "0")]
+    [InlineData("id", "2147483648")] // oltre int.MaxValue: l'id di un contatto e' un int
+    [InlineData("id", "true")]
     [InlineData("name", "5")]
     [InlineData("name", "null")]
     [InlineData("created_at", "\"2026-09-29T17:41:38\"")]
@@ -272,7 +272,7 @@ public sealed class ContactWireTests
     {
         // Un valore diverso per ogni campo: un lettore che scambia due proprieta' (citta'/provincia, fax/cellulare) si vede qui.
         var body = WireTest.Utf8(
-            "{\"id\":\"" + Acme.Value + "\",\"name\":\"n\",\"kind\":\"group\",\"category_id\":\"v01\",\"code\":\"v02\",\"address\":\"v03\",\"postal_code\":\"v04\"," +
+            "{\"id\":" + Acme.Value + ",\"name\":\"n\",\"kind\":\"group\",\"category_id\":\"v01\",\"code\":\"v02\",\"address\":\"v03\",\"postal_code\":\"v04\"," +
             "\"city\":\"v05\",\"province\":\"v06\",\"country\":\"v07\",\"email\":\"v08\",\"pec\":\"v09\",\"phone\":\"v10\",\"fax\":\"v11\",\"mobile\":\"v12\"," +
             "\"vat_number\":\"v13\",\"tax_code\":\"v14\",\"ipa_code\":\"v15\",\"office_code\":\"v16\",\"notes\":\"v17\",\"id_arxivar\":18," +
             "\"created_at\":\"2026-01-02T03:04:05Z\",\"documents_as_sender\":19,\"documents_as_recipient\":20}");

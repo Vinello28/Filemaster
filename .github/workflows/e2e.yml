@@ -20,12 +20,13 @@ concurrency:
 env:
   DOTNET_NOLOGO: "1"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
-  # Il server di riferimento: Sharp-a-File ramo `dev` a questo commit (non il ramo mobile: una corsa deve essere
-  # ripetibile). `master`/v1.0.x non ha codici cartella, PATCH /folders, contatti, created_from/created_to, has_content.
-  # Da aggiornare quando Sharp-a-File pubblica un tag con queste funzioni: SHA del commit "peeled" con
-  # `git ls-remote https://github.com/Vinello28/Sharp-a-File.git 'refs/tags/<tag>^{}'`, mai scritto a mano.
+  # Il server di riferimento: Sharp-a-File ramo `master` a questo commit (non il ramo mobile: una corsa deve essere
+  # ripetibile). Da questo commit gli id sono interi positivi (non piu' ULID con prefisso `doc_...`): uno SHA precedente a
+  # `7ca0e7e` non va bene con il client e con il seed. Il commit sta sul ramo `master`, quindi `git fetch` per SHA lo trova.
+  # Da aggiornare quando Sharp-a-File avanza o pubblica un tag: SHA del commit con `git -C <clone> rev-parse HEAD` o, per un
+  # tag, "peeled" con `git ls-remote https://github.com/Vinello28/Sharp-a-File.git 'refs/tags/<tag>^{}'`, mai scritto a mano.
   SHARPAFILE_REPO: https://github.com/Vinello28/Sharp-a-File.git
-  SHARPAFILE_SHA: 8aec8bb78d34f70150cf7be970c4a712a9847546
+  SHARPAFILE_SHA: 541f3789037f6543746de11d02d8388ff9b9a215
 
 # `shell: bash` esplicito = `bash --noprofile --norc -eo pipefail` (senza, Linux usa solo `-e`).
 defaults:

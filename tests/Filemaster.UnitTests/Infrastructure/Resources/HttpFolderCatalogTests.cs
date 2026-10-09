@@ -36,7 +36,7 @@ public sealed class HttpFolderCatalogTests
         Assert.Equal(new FolderCode("FATTURE"), folder.Id);
         Assert.Null(folder.ParentId);
         Assert.Equal("Fatture", folder.Name);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 12, 9531000), folder.CreatedAt);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 5, 8217850), folder.CreatedAt);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class HttpFolderCatalogTests
         Assert.Equal(new FolderCode("FATTURE.2026"), folder.Id);
         Assert.Equal(new FolderCode("FATTURE"), folder.ParentId);
         Assert.Equal("Fatture 2026", folder.Name);
-        Assert.Equal(WireTest.Utc(2026, 10, 1, 9, 59, 13, 1097060), folder.CreatedAt);
+        Assert.Equal(WireTest.Utc(2026, 10, 9, 11, 11, 5, 9076810), folder.CreatedAt);
     }
 
     [Fact]

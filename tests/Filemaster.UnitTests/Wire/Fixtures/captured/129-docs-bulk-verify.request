@@ -3,4 +3,4 @@ POST /documents/bulk/verify
 # curl: -H
 # curl: Content-Type: application/json
 # curl: -d
-# curl: {"document_ids":["doc_01M3VEESG5KBYR5PYAJ0TDT4B2","doc_01M3VEESPZ9C3HMABKJ9X24PAS"]}
+# curl: {"document_ids":[30017,30019]}

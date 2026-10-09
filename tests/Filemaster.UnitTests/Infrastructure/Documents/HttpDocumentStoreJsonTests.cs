@@ -32,7 +32,7 @@ public sealed class HttpDocumentStoreJsonTests
         using var oracle = JsonDocument.Parse(WireFixtures.Captured("70-docs-list-default"));
         var items = oracle.RootElement.GetProperty("items");
         Assert.Equal(items.GetArrayLength(), page.Items.Count);
-        Assert.Equal(items[0].GetProperty("id").GetString(), page.Items[0].Id.Value);
+        Assert.Equal(items[0].GetProperty("id").GetRawText(), page.Items[0].Id.Value); // l'id e' un numero JSON
         Assert.Equal(oracle.RootElement.TryGetProperty("next_cursor", out var cursor) ? cursor.GetString() : null, page.NextCursor);
     }
 

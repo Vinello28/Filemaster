@@ -3,4 +3,4 @@ POST /documents/bulk/move
 # curl: -H
 # curl: Content-Type: application/json
 # curl: -d
-# curl: {"document_ids":["doc_01M3VEESPZ9C3HMABKJ9X24PAS","doc_01M3VEESSR30BNB50JNTGF31D8"],"folder_id":"FATTURE.2027"}
+# curl: {"document_ids":[30019,30020],"folder_id":"FATTURE.2027"}

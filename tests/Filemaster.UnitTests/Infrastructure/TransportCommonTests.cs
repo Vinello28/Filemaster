@@ -91,7 +91,7 @@ public sealed class TransportCommonTests
             return Task.FromResult(Reply.Json(200, "{}"));
         });
 
-        await rig.Transport.SendBufferedAsync(new TransportRequest(new HttpMethod(method), "documents/doc_X"), default);
+        await rig.Transport.SendBufferedAsync(new TransportRequest(new HttpMethod(method), "documents/42"), default);
 
         Assert.NotNull(Assert.Single(rig.Handler.Requests).Message.Content);
         Assert.Equal(0, declared);
@@ -137,7 +137,7 @@ public sealed class TransportCommonTests
 
     [Theory]
     [InlineData("https://filemaster.example.test", "documents", "https://filemaster.example.test/documents")]
-    [InlineData("https://filemaster.example.test/", "documents/doc_X/content", "https://filemaster.example.test/documents/doc_X/content")]
+    [InlineData("https://filemaster.example.test/", "documents/42/content", "https://filemaster.example.test/documents/42/content")]
     [InlineData("https://filemaster.example.test/proxy", "documents", "https://filemaster.example.test/proxy/documents")]
     [InlineData("https://filemaster.example.test/proxy/", "folders?parent_id=FATTURE", "https://filemaster.example.test/proxy/folders?parent_id=FATTURE")]
     [InlineData("https://filemaster.example.test/a/b", "healthz", "https://filemaster.example.test/a/b/healthz")]
@@ -251,9 +251,9 @@ public sealed class TransportCommonTests
     {
         Assert.Throws<ArgumentNullException>(() => new TransportRequest(null!, "documents"));
         Assert.Throws<ArgumentNullException>(() => new TransportRequest(HttpMethod.Get, null!));
-        var request = new TransportRequest(new HttpMethod("PATCH"), "documents/doc_X/folder?x=1");
+        var request = new TransportRequest(new HttpMethod("PATCH"), "documents/42/folder?x=1");
         Assert.Equal("PATCH", request.Method.Method);
-        Assert.Equal("documents/doc_X/folder?x=1", request.RelativeUri);
+        Assert.Equal("documents/42/folder?x=1", request.RelativeUri);
         Assert.Null(request.Customize);
         Assert.Null(request.IsExpectedStatus);
     }

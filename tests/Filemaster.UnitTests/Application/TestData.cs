@@ -4,12 +4,12 @@ using Filemaster.Domain;
 
 namespace Filemaster.UnitTests.Application;
 
-/// <summary>Documenti e contatti di prova, riconoscibili dal numero (gli id sono validi: 26 caratteri Crockford).</summary>
+/// <summary>Documenti e contatti di prova, riconoscibili dal numero (gli id sono numeri validi; quelli dei documenti superano <c>int.MaxValue</c>).</summary>
 internal static class TestData
 {
-    internal static DocumentId DocumentIdOf(int n) => new("doc_" + new string('0', 24) + n.ToString("D2", CultureInfo.InvariantCulture));
+    internal static DocumentId DocumentIdOf(int n) => DocumentId.From(3_000_000_000L + n);
 
-    internal static ContactId ContactIdOf(int n) => new("con_" + new string('0', 24) + n.ToString("D2", CultureInfo.InvariantCulture));
+    internal static ContactId ContactIdOf(int n) => ContactId.From(7_000 + n);
 
     internal static Document Doc(int n, string? sha256 = null, long sizeBytes = 0, string? metadataJson = "{}", string mimeType = "application/pdf")
     {

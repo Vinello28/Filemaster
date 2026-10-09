@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text.Json;
 using Filemaster.Domain;
 
@@ -13,7 +14,7 @@ namespace Filemaster.Application;
 /// <para>
 /// <b>La forma del corpo</b> (da <c>WebhookDispatcher.BuildBody</c> del server): un oggetto
 /// <c>{"event","delivery_id","occurred_at","payload"}</c>. <c>event</c> e' il nome dell'evento, <c>delivery_id</c> l'identificatore della consegna
-/// (<c>whd_</c> e un ULID), <c>occurred_at</c> il momento in cui il server ha accodato la consegna (ISO 8601 UTC, con <c>Z</c>) e
+/// (un numero JSON intero positivo, per tolleranza anche un testo non vuoto; resta una stringa), <c>occurred_at</c> il momento in cui il server ha accodato la consegna (ISO 8601 UTC, con <c>Z</c>) e
 /// <c>payload</c> l'oggetto dell'evento. I payload dei tre eventi che questa versione conosce, derivati dal codice del server
 /// (<c>DocumentService</c>, serializzati in snake_case senza omettere i null, a differenza delle risposte delle API):
 /// </para>
@@ -23,13 +24,20 @@ namespace Filemaster.Application;
 /// <item><description><c>document.integrity_failed</c>: <c>{"document_id","sha256","detail"}</c>, con <c>detail</c> anche <c>null</c>, per <see cref="DocumentIntegrityFailedEvent"/>.</description></item>
 /// </list>
 /// <para>
+/// <b>Gli id</b>: <c>document_id</c> e' un numero JSON in <c>document.uploaded</c> e <c>document.integrity_failed</c> ma una stringa di cifre
+/// in <c>document.deleted</c> (cosi' manda il server); si accettano entrambe le forme, con la regola di <see cref="DocumentId"/>
+/// (decimale canonico da 1 a <c>long.MaxValue</c>: <c>1.5</c>, <c>-3</c>, <c>"042"</c> e <c>"doc_x"</c> sono un payload malformato).
+/// <c>delivery_id</c> e' un numero JSON intero positivo; per tolleranza si accetta anche un testo non vuoto. In entrambi i casi
+/// <see cref="WebhookEvent.DeliveryId"/> resta una stringa (un numero diventa le sue cifre decimali).
+/// </para>
+/// <para>
 /// <b>Il mapping nome -> tipo e' di questo parser</b> (il dominio non ha stringhe del filo): il confronto del nome e' esatto
 /// (maiuscole comprese). Un evento di nome sconosciuto, per esempio uno che il server ha aggiunto dopo questa versione del
 /// client, diventa un <see cref="UnknownWebhookEvent"/> con il nome grezzo e il payload cosi' com'e': mai un errore.
 /// </para>
 /// <para>
 /// <b>Un evento di nome noto con un payload malformato</b> (non e' un oggetto, un campo manca o ha il tipo sbagliato, un
-/// <c>document_id</c> non canonico, <c>deduplicated</c> che non e' un booleano JSON, <c>sha256</c> <c>null</c> dove non e'
+/// <c>document_id</c> non valido, <c>deduplicated</c> che non e' un booleano JSON, <c>sha256</c> <c>null</c> dove non e'
 /// ammesso) diventa anch'esso un <see cref="UnknownWebhookEvent"/>, con il nome noto in <see cref="UnknownWebhookEvent.EventType"/> e il
 /// payload grezzo. Una consegna non lancia mai per il suo payload: un errore 500 del ricevitore farebbe ritentare inutilmente il
 /// server (la consegna e' "almeno una volta"). Un campo <c>null</c> esplicito vale solo dove il tipo lo ammette; un campo
@@ -142,9 +150,9 @@ public static class WebhookEventParser
             return null;
         }
 
-        if (!TryGetString(root, "delivery_id", out var deliveryId) || string.IsNullOrWhiteSpace(deliveryId))
+        if (!TryGetDeliveryId(root, out var deliveryId))
         {
-            error = "manca il campo 'delivery_id' o non e' una stringa non vuota";
+            error = "manca il campo 'delivery_id' o non e' un intero positivo ne' una stringa non vuota";
             return null;
         }
 
@@ -265,10 +273,63 @@ public static class WebhookEventParser
         }
     }
 
+    // Il server scrive document_id come NUMERO in document.uploaded e document.integrity_failed e come STRINGA di cifre in
+    // document.deleted (misurato nella cattura t64): si accettano entrambe le forme, e in tutte e due vale la regola di DocumentId.TryParse
+    // (cifre ASCII, niente segno, niente zero iniziale, da 1 a long.MaxValue). Il testo di un token numerico e' il suo GetRawText(),
+    // senza passare da double: 1.0, 1e3, -5 e un numero oltre long.MaxValue non sono id.
     private static bool TryGetDocumentId(JsonElement payload, out DocumentId id)
     {
         id = default;
-        return TryGetString(payload, "document_id", out var text) && DocumentId.TryParse(text, out id);
+        if (!payload.TryGetProperty("document_id", out var property))
+        {
+            return false;
+        }
+
+        switch (property.ValueKind)
+        {
+            case JsonValueKind.Number:
+                return DocumentId.TryParse(property.GetRawText(), out id);
+            case JsonValueKind.String:
+                return DocumentId.TryParse(property.GetString(), out id);
+            default:
+                return false;
+        }
+    }
+
+    // delivery_id e' un numero JSON intero positivo (bigint sul server) o, per tolleranza, una stringa non vuota: resta una stringa
+    // (la chiave di deduplicazione), nella forma decimale canonica se arriva come numero. Un numero decimale, con esponente, negativo,
+    // zero o fuori da long non e' una chiave attendibile: busta non conforme.
+    private static bool TryGetDeliveryId(JsonElement root, out string value)
+    {
+        value = string.Empty;
+        if (!root.TryGetProperty("delivery_id", out var property))
+        {
+            return false;
+        }
+
+        switch (property.ValueKind)
+        {
+            case JsonValueKind.String:
+                var text = property.GetString()!;
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return false;
+                }
+
+                value = text;
+                return true;
+            case JsonValueKind.Number:
+                var raw = property.GetRawText();
+                if (!long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var number) || number <= 0)
+                {
+                    return false;
+                }
+
+                value = raw;
+                return true;
+            default:
+                return false;
+        }
     }
 
     // System.Text.Json legge una data senza fuso come ora locale della macchina: qui il fuso deve essere scritto (Z oppure

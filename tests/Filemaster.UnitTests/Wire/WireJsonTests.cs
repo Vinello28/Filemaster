@@ -121,11 +121,13 @@ public sealed class WireJsonTests
         const string Sentinel = "SENTINELLA-valore-riservato-123";
 
         var wrongType = WireTest.Unexpected(() => Read(WireTest.Utf8("{\"count\":\"" + Sentinel + "\"}"), o => o.RequiredCount("count")));
-        var badId = WireTest.Unexpected(() => Read(WireTest.Utf8("{\"id\":\"" + Sentinel + "\"}"), o => o.RequiredId<DocumentId>("id", DocumentId.TryParse, "un id di documento")));
+        var badId = WireTest.Unexpected(() => Read(WireTest.Utf8("{\"id\":\"" + Sentinel + "\"}"), o => o.RequiredNumericId<DocumentId>("id", DocumentId.TryParse, "un id di documento")));
+        var badNumber = WireTest.Unexpected(() => Read(WireTest.Utf8("{\"id\":99999999999999999999999}"), o => o.RequiredNumericId<DocumentId>("id", DocumentId.TryParse, "un id di documento")));
         var badDate = WireTest.Unexpected(() => Read(WireTest.Utf8("{\"at\":\"" + Sentinel + "\"}"), o => o.RequiredDate("at")));
 
         Assert.DoesNotContain(Sentinel, wrongType.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Sentinel, badId.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("99999999999999999999999", badNumber.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Sentinel, badDate.Message, StringComparison.Ordinal);
     }
 

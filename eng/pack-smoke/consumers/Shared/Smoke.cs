@@ -39,7 +39,7 @@ namespace PackSmoke
         private const string TenantFixture = "03-tenant.json";
         private const string UploadFixture = "47-doc-upload.json";
         private const string ListFixture = "71-docs-list-limit1-page1.json";
-        private const string ContactValue = "con_01M3VCWS5PAKMSC47JNJ1PTFJQ";
+        private const string ContactValue = "2";
 
         // Punto d'ingresso comune: argomenti <versione-attesa> <cartella-fixture>; exit 0 se tutto passa, 1 altrimenti.
         public static async Task<int> MainAsync(string[] args, Func<string, string, Task> scenario)
@@ -155,7 +155,7 @@ namespace PackSmoke
             {
                 var tenant = await client.Tenant.GetAsync(cancellation.Token).ConfigureAwait(false);
                 Check(
-                    tenant.Id.Value == "ten_01M3VCWS5PAKMSC47JNJ1PTFJQ" && tenant.Slug == "acme-test" && tenant.Name == "Acme Test" && tenant.Status == TenantStatus.Active,
+                    tenant.Id.Value == "1" && tenant.Id.Number == 1 && tenant.Slug == "acme-test" && tenant.Name == "Acme Test" && tenant.Status == TenantStatus.Active,
                     "[" + label + "] GET /tenant letto male: " + tenant);
 
                 var fileBytes = Encoding.ASCII.GetBytes("%PDF-1.4 pack smoke");
@@ -176,7 +176,7 @@ namespace PackSmoke
                 }
 
                 Check(
-                    upload.Document.Id.Value == "doc_01M3VEESG5KBYR5PYAJ0TDT4B2" && !upload.Deduplicated && upload.Document.SizeBytes == 590
+                    upload.Document.Id.Value == "30017" && upload.Document.Id.Number == 30017L && upload.Deduplicated && upload.Document.SizeBytes == 590
                         && upload.Document.OriginalFilename == "fattura.pdf" && upload.Document.HasContent,
                     "[" + label + "] risposta di POST /documents letta male: " + upload.Document.Id + " " + upload.Document.SizeBytes);
 
@@ -198,7 +198,7 @@ namespace PackSmoke
                 };
                 var page = await client.Documents.ListAsync(query, new PageRequest(limit: 1), cancellation.Token).ConfigureAwait(false);
                 Check(
-                    page.Items.Count == 1 && page.Items[0].Id.Value == "doc_01M3VEETKY7G9QMZHV4DPQ3QCV" && page.NextCursor != null,
+                    page.Items.Count == 1 && page.Items[0].Id.Value == "30028" && page.NextCursor != null,
                     "[" + label + "] risposta di GET /documents letta male");
             }
 
